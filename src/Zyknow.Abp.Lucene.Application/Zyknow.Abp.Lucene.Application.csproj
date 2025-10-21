@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="../../common.props"/>
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Zyknow.Abp.Lucene</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Zyknow.Abp.Lucene.Application.Contracts/Zyknow.Abp.Lucene.Application.Contracts.csproj"/>
+    <ProjectReference Include="../Zyknow.Abp.Lucene.Domain/Zyknow.Abp.Lucene.Domain.csproj"/>
+    <ProjectReference Include="../Zyknow.Abp.Lucene.Domain.Shared/Zyknow.Abp.Lucene.Domain.Shared.csproj"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Volo.Abp" Version="$(AbpVersion)"/>
+    <PackageReference Include="Volo.Abp.Ddd.Application" Version="$(AbpVersion)"/>
+    <PackageReference Include="Volo.Abp.EventBus" Version="$(AbpVersion)"/>
+    <PackageReference Include="Volo.Abp.EventBus.Abstractions" Version="$(AbpVersion)"/>
+    <PackageReference Include="Lucene.Net" Version="$(LuceneVersion)"/>
+    <PackageReference Include="Lucene.Net.Analysis.Common" Version="$(LuceneVersion)"/>
+    <PackageReference Include="Lucene.Net.ICU" Version="$(LuceneVersion)"/>
+    <PackageReference Include="Lucene.Net.QueryParser" Version="$(LuceneVersion)"/>
+    <PackageReference Include="Lucene.Net.Highlighter" Version="$(LuceneVersion)"/>
+    <PackageReference Include="Volo.Abp.Authorization" Version="$(AbpVersion)"/>
+  </ItemGroup>
+
+</Project>

@@ -50,7 +50,6 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
-          cache: true
 
       - name: Restore
         run: dotnet restore Zyknow.Abp.Lucene.sln
@@ -146,4 +145,3 @@ jobs:
             artifacts/packages/*.nupkg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-

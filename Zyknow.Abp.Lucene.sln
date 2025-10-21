@@ -18,6 +18,8 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".sln", ".sln", "{5AC9B668-BCD7-435E-90E9-D4E9BCD4358F}"
 	ProjectSection(SolutionItems) = preProject
 		common.props = common.props
+		README.md = README.md
+		README.zh.md = README.zh.md
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{B4143E6B-57AB-45DF-848B-B3C507A6C97E}"

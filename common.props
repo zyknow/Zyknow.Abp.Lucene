@@ -4,7 +4,7 @@
         <Version>1.0.0</Version>
         <NoWarn>$(NoWarn);CS1591</NoWarn>
         <AbpProjectType>app</AbpProjectType>
-        <AbpVersion>9.3.3</AbpVersion>
+        <AbpVersion>9.0.0</AbpVersion>
         <LuceneVersion>4.8.0-beta00017</LuceneVersion>
     </PropertyGroup>
 

@@ -1,21 +1,27 @@
 # Zyknow.Abp.Lucene
 
-Lucene.NET integration module for ABP Framework. Provides fluent configuration to index entity fields and a search application service.
+[简体中文](README.zh.md) | English
+
+An ABP module based on Lucene.NET that provides configurable full-text search capabilities for your system.
 
 ## Features
 
-- Global ICU-based analyzer (multilingual)
-- Fluent API to select fields, keyword fields, boost, autocomplete
-- Multi-tenant index isolation (optional)
-- Index manager: add/update/delete/rebuild
-- Search service: multi-field query, paging, payload
+- Unified ICU general analyzer (multilingual friendly)
+- Fluent API: choose indexed fields, keyword fields, boost, autocomplete
+- Optional multi-tenant index isolation
+- Index management: add/update/delete/rebuild
+- Search service: multi-field query, paging, stored fields (Payload)
 
-## Installation
+## Installation & Integration
 
-- Add project references to `Zyknow.Abp.Lucene.*` as needed
-- Register module in your host application's module dependencies
+- Add project references to `Zyknow.Abp.Lucene.*` in your host application
+- Include this module in your host module's `DependsOn`
 
 ## Quick Start
+
+The module subscribes to ABP local entity events internally and only listens to entity types registered in `ConfigureLucene`, achieving automatic index maintenance.
+
+- Configuration example
 
 ```csharp
 Configure<ZyknowLuceneOptions>(opt =>
@@ -35,167 +41,70 @@ Configure<ZyknowLuceneOptions>(opt =>
 });
 ```
 
-## Indexing
+## Search API Response
 
-```csharp
-await _indexManager.IndexAsync(book);
-await _indexManager.IndexRangeAsync(books, replace: true);
-await _indexManager.DeleteAsync<Book>(bookId);
-await _indexManager.RebuildAsync(typeof(Book));
-```
-
-## Event-Driven Auto Indexing
-
-- Enable/disable: controlled via `ZyknowLuceneOptions.EnableAutoIndexingEvents` (default: true).
-- How it works: subscribes to ABP local entity events (create/update/delete) and aggregates changes within the current UnitOfWork. It runs batch indexing on transaction commit (reduces writer open/commit cycles).
-- Only configured entities: works only for types registered via Fluent DSL (`Descriptors`). Unregistered entities are ignored.
-- Batch delete optimization: uses `DeleteRangeAsync<T>(IEnumerable<object> ids)` for faster deletion.
-- Multi-tenancy: runs under the current tenant context and writes to the tenant-isolated index directory.
-
-## Searching
-
-HTTP GET endpoints are available for both single-entity and multi-entity aggregated search.
-
-- Single-entity search: `GET /api/lucene/search/{entity}`
-  - Query params (`SearchQueryInput`): `query`, `fuzzy`, `prefix`, `highlight`, `skipCount`, `maxResultCount`, `sorting`
-  - Example:
-    ```bash
-    curl -G "http://localhost:5000/api/lucene/search/Book" \
-      --data-urlencode "query=Lucene" \
-      --data-urlencode "fuzzy=true" \
-      --data-urlencode "prefix=true" \
-      --data-urlencode "skipCount=0" \
-      --data-urlencode "maxResultCount=10"
-    ```
-
-- Multi-entity aggregated search: `GET /api/lucene/search-many`
-  - Query params (`MultiSearchInput`): `entities` (required, array), plus `query`, `fuzzy`, `prefix`, `highlight`, `skipCount`, `maxResultCount`, `sorting`
-  - How to pass arrays: repeat the same key, e.g. `entities=Book&entities=Item`
-  - Example:
-    ```bash
-    curl -G "http://localhost:5000/api/lucene/search-many" \
-      --data-urlencode "entities=Book" \
-      --data-urlencode "entities=Item" \
-      --data-urlencode "query=title:Lucene OR name:Lucene" \
-      --data-urlencode "prefix=true" \
-      --data-urlencode "fuzzy=false" \
-      --data-urlencode "skipCount=0" \
-      --data-urlencode "maxResultCount=20"
-    ```
-
-Response
-- Both endpoints return `SearchResultDto` (paged): `TotalCount` and `Items`.
-- Each hit (`SearchHitDto`) includes:
-  - `EntityId`: document key (from descriptor `IdFieldName`)
+- Both endpoints return a paged `SearchResultDto`: `TotalCount` and `Items`.
+- Each hit (`SearchHitDto`) contains:
+  - `EntityId`: document primary key (from each entity descriptor's `IdFieldName`)
   - `Score`: relevance score
-  - `Payload`: stored field key-values. In multi-entity mode, `Payload["__IndexName"]` indicates the source entity index name.
+  - `Payload`: stored field key-value pairs. In multi-entity aggregation, it also contains `Payload["__IndexName"]` to indicate the source entity index name.
 
 Notes
-- Global query behavior is controlled by `LuceneOptions.LuceneQuery`:
+
+- Global query behavior is affected by `LuceneOptions.LuceneQuery`:
   - `MultiFieldMode`: `AND`/`OR` (default `OR`).
-  - `FuzzyMaxEdits`: Levenshtein edit distance for fuzzy matching (default 1).
-- With multi-tenancy (`PerTenantIndex`), requests search under the current tenant's index directory.
+  - `FuzzyMaxEdits`: edit distance for fuzzy matching (default 1).
+- With multi-tenancy enabled (`PerTenantIndex`), requests search under the current tenant's index directory.
 
-## Storage Location
+## Advanced
 
-- Default: `Path.Combine(AppContext.BaseDirectory, "lucene-index")`
-- With multi-tenancy: `lucene-index/{tenantId}/{indexName}`
-- Configurable via `ZyknowLuceneOptions.IndexRootPath`
-
-## Tests
-
-- Domain tests validate fluent configuration
-- Application tests index sample entities and assert search behavior
-
-## License
-
-MIT
-
-## Synchronizer
-
-- Purpose: keep Lucene index consistent with the database (full/incremental fixes).
-- Service: `LuceneIndexSynchronizer` (Application layer), supports generic key `SyncAllAsync<T,TKey>` and per-tenant `SyncTenantAsync(tenantId, repositoryFactory)`.
-- Automatic projection:
-  - For entities with only property fields (`Field`), the synchronizer automatically loads only necessary columns (Id + registered fields) based on descriptors; no entity construction is needed.
-  - Uses the dictionary document factory `LuceneDocumentFactory.CreateDocument(IDictionary<string,string>, descriptor)` to build documents and write.
-- Fallback policy:
-  - If there are derived fields (`ValueField(Func<T,string>)`) without declared dependencies, it falls back to “load full entity + IndexRangeAsync” to ensure correctness.
-  - Logs:
-    - Projection (Debug): `Lucene sync using projection for {Entity} (Index:{IndexName}) Fields:{Fields}`
-    - Fallback (Information): `Lucene sync fallback to entity load for {Entity} (Index:{IndexName}). ValueFields:{Fields}`
-- Dependency declaration (optional optimization):
-  - Use `Depends(() => x.Title).Depends(() => x.Description)` for derived fields to later switch to automatic projection.
-- Custom repositories (optional):
-  - `SyncTenantAsync` accepts `repositoryFactory(Type entityType)` to provide repository instances and loops through all registered entities.
-
-### Example: per-tenant sync
-```csharp
-await _synchronizer.SyncTenantAsync(
-    tenantId: CurrentTenant.Id,
-    repositoryFactory: type => type switch
-    {
-        var t when t == typeof(Comic) => ServiceProvider.GetRequiredService<IRepository<Comic, Guid>>(),
-        var t when t == typeof(Video) => ServiceProvider.GetRequiredService<IRepository<Video, Guid>>(),
-        _ => null
-    },
-    batchSize: 1000,
-    deleteMissing: true
-);
-```
-
-### Batch write documents (dictionary)
-```csharp
-var values = new Dictionary<string, string>
-{
-    [descriptor.IdFieldName] = comic.Id.ToString(),
-    ["Title"] = comic.Title,
-    ["Description"] = comic.Description
-};
-var doc = LuceneDocumentFactory.CreateDocument(values, descriptor);
-await _indexManager.IndexRangeDocumentsAsync(descriptor, new[] { doc }, replace: false);
-```
-
-## FieldBuilder Configure Methods
+### Field configuration methods (FieldBuilder)
 
 Within `EntitySearchBuilder<T>.Field(expr, configure)` or `ValueField(selector, configure)`, you can use the following methods to control how the field is indexed and retrieved:
 
 - `Store(bool enabled = true)`
-  - Purpose: whether to store the original field value in the index (for result payload/display).
+
+  - Purpose: whether to store the original field value in the index (for result display or further processing).
   - Default: `false`. Call `f.Store()` to enable.
-  - Effect: when enabled, `LuceneSearchAppService` retrieves this field from the hit document and includes it in the result payload.
+  - Effect: when enabled, `LuceneSearchAppService` can read this value from the hit document and put it into the result `Payload`.
 
 - `Name(string name)`
-  - Purpose: set an explicit field name.
+
+  - Purpose: explicitly set the field name.
   - Default: property fields use the property name; `ValueField` defaults to `"Value"`.
   - Effect: index and queries use this name, helpful for consistent display/conventions.
 
 - `Keyword()`
-  - Purpose: index as a keyword (no tokenization), suitable for identifiers, codes, exact tags.
+
+  - Purpose: index as a keyword (no tokenization), suitable for identifiers, codes, exact tags, etc.
   - Default: off. When called, uses `StringField`; otherwise uses `TextField` (tokenized).
 
 - `Autocomplete(int minGram = 1, int maxGram = 20)`
+
   - Purpose: declare hint parameters for autocomplete (NGram/EdgeNGram).
   - Default: not set.
-  - Note: acts as a descriptor-level hint; requires a compatible analyzer/indexing strategy (e.g., NGram analyzer) to take effect.
+  - Note: currently a descriptor-level hint; to take effect, combine with a compatible analyzer/indexing strategy (e.g., an analyzer using NGram).
 
-- `StoreTermVectors(bool positions = true, offsets = true)`
-  - Purpose: store term vectors (positions/offsets) for advanced features like highlighting.
+- `StoreTermVectors(bool positions = true, bool offsets = true)`
+
+  - Purpose: store term vector info (positions/offsets), often used for highlighting and other advanced features.
   - Default: not set.
-  - Note: currently a configuration hint; to enable highlighting/snippet generation, combine with search-time processing or extend index writing.
+  - Note: currently a configuration hint; to enable highlighting/snippet generation, combine with `TermVector` at search time or extend index writing.
 
 - `Depends(Expression<Func<object>> member)`
-  - Purpose: declare dependent entity properties for `ValueField` (derived text), enabling the synchronizer to load only necessary columns.
+  - Purpose: declare dependencies for `ValueField` (derived text) so the synchronizer can load only necessary columns and compute the derived text.
   - Default: not set.
-  - Effect: the synchronizer prioritizes automatic projection to load only declared columns; if missing or non-projectable delegates exist, it falls back to full entity loading and logs at Information level.
+  - Effect: the synchronizer prioritizes automatic projection to load only declared columns; if missing or non-projectable delegates exist, it falls back to full entity loading and logs at Info level.
 
-### Example
+#### Example configuration
+
 ```csharp
 model.Entity<Book>(e =>
 {
-    // Property field: tokenized and stored
+    // Property field: tokenized and store original value
     e.Field(x => x.Title, f => f.Store());
 
-    // Keyword field: exact match and renamed
+    // Keyword field: no tokenization, exact match, renamed
     e.Field(x => x.Code, f => f.Keyword().Name("BookCode"));
 
     // Derived field: declare dependencies to enable automatic projection
@@ -206,15 +115,15 @@ model.Entity<Book>(e =>
 });
 ```
 
-## Filter Provider & LINQ Query Mapping
+### Filter Provider & LINQ mapping
 
-You can plug custom filters into the search pipeline via `ILuceneFilterProvider` in the Application layer.
+You can plug custom filters into the search pipeline via `ILuceneFilterProvider` in the Application layer:
 
 - Interface: `Task<Query?> BuildAsync(SearchFilterContext ctx)`
 - Context: `{ string EntityName, EntitySearchDescriptor Descriptor, SearchQueryInput Input }`
-- Composition: returned queries are added with `Occur.MUST`
+- Composition: the returned `Query` is added with `Occur.MUST` to the final query
 
-Linq-to-Lucene helper allows writing filters using simple LINQ and maps them to Lucene queries:
+A lightweight LINQ → Lucene mapping helper is provided to write filters with simple LINQ expressions and convert them into Lucene queries:
 
 - Equality: `x => x.Field == value` → `TermQuery`
 - IN: `values.Contains(x.Field)` → multiple `TermQuery` with `BooleanQuery SHOULD + MinimumNumberShouldMatch=1`
@@ -224,11 +133,13 @@ Linq-to-Lucene helper allows writing filters using simple LINQ and maps them to 
 - Boolean composition: `AndAlso` → `MUST`, `OrElse` → `SHOULD`
 
 Notes:
-- Filter fields must be indexed (prefer `Keyword()` for exact match).
-- Field name resolution uses `Descriptor.Fields`; expression member names must match descriptor field names.
-- For performance/stability, prefer prefix/keyword over broad wildcards.
 
-### Example: filter by LibraryId
+- Fields used in filtering must be indexed (prefer `Keyword()` for exact matching).
+- Field name resolution uses `Descriptor.Fields`; expression member names must match descriptor field names.
+- Performance: prefer prefix/keyword filters; use broad wildcards with caution.
+
+#### Example: filter by LibraryId
+
 ```csharp
 public class MediumLuceneFilter : ILuceneFilterProvider, IScopedDependency
 {
@@ -242,11 +153,12 @@ public class MediumLuceneFilter : ILuceneFilterProvider, IScopedDependency
 }
 ```
 
-### Range queries
+#### Range queries (TermRangeQuery)
 
-Term-based range queries compare strings lexicographically. Normalize numbers/dates before indexing to ensure correct ordering.
+Term-based range comparisons are lexicographical. Normalize numbers/dates at indexing time to ensure correct ordering.
 
-- Numbers: zero-pad to a fixed width (e.g., 8 digits)
+- Numbers: use zero-padded fixed-width strings (e.g., 8 digits)
+
 ```csharp
 // Index as zero-padded strings like "00001234"
 Expression<Func<ItemProj, bool>> expr = x => x.ReadCount >= "00000010" && x.ReadCount < "00000100";
@@ -254,6 +166,7 @@ var q = LinqLucene.Where(ctx.Descriptor, expr);
 ```
 
 - Dates: use a sortable format like `yyyyMMddHHmmss`
+
 ```csharp
 // Index CreatedAt as "20250101000000" style strings
 Expression<Func<ItemProj, bool>> expr = x => x.CreatedAt >= "20250101000000" && x.CreatedAt < "20260101000000";
@@ -261,16 +174,19 @@ var q = LinqLucene.Where(ctx.Descriptor, expr);
 ```
 
 Notes:
+
 - Prefer `Keyword()/LowerCaseKeyword()` for exact/normalized fields.
-- For true numeric/date range types, consider extending to numeric/point queries.
+- For true numeric/date ranges, consider extending to Numeric/Points queries.
 
-### Case-insensitive keyword (culture)
+#### Case-insensitive keyword (culture)
 
-Use `LowerCaseKeyword()` or `LowerCaseKeyword(CultureInfo)` to normalize values at index/write time and query-time mapping:
+Use `LowerCaseKeyword()` or `LowerCaseKeyword(CultureInfo)` to normalize values at index/write time and in query mapping：
+
 ```csharp
 model.Entity<Tag>(e =>
 {
     e.Field(x => x.Name, f => f.LowerCaseKeyword(new System.Globalization.CultureInfo("tr-TR")));
 });
 ```
-This applies lowercasing during indexing and in LINQ → Lucene mapping (Term/Prefix/Wildcard/IN) for matching.
+
+This applies lowercasing during indexing and in LINQ → Lucene mapping (Term/Prefix/Wildcard/IN) to ensure consistent matching.

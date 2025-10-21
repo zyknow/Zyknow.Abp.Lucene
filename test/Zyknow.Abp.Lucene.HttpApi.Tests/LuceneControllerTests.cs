@@ -65,9 +65,8 @@ public class LuceneControllerTests
         }, replace: true);
 
         var client = server.CreateClient();
-        var payload = JsonSerializer.Serialize(new SearchQueryInput { Query = "Lucene", MaxResultCount = 10, SkipCount = 0 });
-        var content = new StringContent(payload, Encoding.UTF8, "application/json");
-        var resp = await client.PostAsync("/api/lucene/search/Book", content);
+        var url = "/api/lucene/search/Book?Query=Lucene&MaxResultCount=10&SkipCount=0";
+        var resp = await client.GetAsync(url);
         resp.EnsureSuccessStatusCode();
         var json = await resp.Content.ReadAsStringAsync();
         var result = JsonSerializer.Deserialize<SearchResultDto>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;

@@ -1,5 +1,7 @@
 # Zyknow.Abp.Lucene
 
+[English](README.md) | 简体中文
+
 一个基于 Lucene.NET 的 ABP 模块，用于为系统提供可配置的全文搜索能力。
 
 ## 特性
@@ -17,74 +19,28 @@
 
 ## 快速上手
 
-```csharp
-Configure<ZyknowLuceneOptions>(opt =>
-{
-    opt.IndexRootPath = Path.Combine(AppContext.BaseDirectory, "lucene-index");
-    opt.PerTenantIndex = true;
-    opt.AnalyzerFactory = AnalyzerFactories.IcuGeneral;
-    opt.ConfigureLucene(model =>
+内部已订阅 ABP 本地实体事件，只会监听ConfigureLucene中注册的实体类型，实现自动索引维护。
+
+* 配置如下
+    ```csharp
+    Configure<ZyknowLuceneOptions>(opt =>
     {
-        model.Entity<Book>(e =>
+        opt.IndexRootPath = Path.Combine(AppContext.BaseDirectory, "lucene-index");
+        opt.PerTenantIndex = true;
+        opt.AnalyzerFactory = AnalyzerFactories.IcuGeneral;
+        opt.ConfigureLucene(model =>
         {
-            e.Field(x => x.Title, f => f.Store());
-            e.Field(x => x.Author, f => f.Store());
-            e.Field(x => x.Code, f => f.Keyword());
+            model.Entity<Book>(e =>
+            {
+                e.Field(x => x.Title, f => f.Store());
+                e.Field(x => x.Author, f => f.Store());
+                e.Field(x => x.Code, f => f.Keyword());
+            });
         });
     });
-});
-```
-
-## 索引操作
-
-```csharp
-await _indexManager.IndexAsync(book);
-await _indexManager.IndexRangeAsync(books, replace: true);
-await _indexManager.DeleteAsync<Book>(bookId);
-await _indexManager.RebuildAsync(typeof(Book));
-```
-
-## 事件自动索引接入
-
-- 开启自动接入：默认启用，可通过 `ZyknowLuceneOptions.EnableAutoIndexingEvents = true/false` 控制。
-- 原理：订阅 ABP 本地实体事件（创建/更新/删除），在当前 UoW 事务提交后统一批量维护索引（聚合 Upsert/ Delete，减少写入次数）。
-- 仅处理已注册实体：仅对通过 Fluent DSL 注册到 `Descriptors` 的类型生效，未注册的实体事件将被忽略。
-- 批量删除优化：使用 `DeleteRangeAsync<T>(IEnumerable<object> ids)` 提升删除性能。
-- 多租户支持：在当前租户上下文内执行，索引目录按租户自动隔离。
-
-## 搜索
-
-支持通过 HTTP GET 进行搜索，包含单实体与多实体聚合两类端点。
-
-- 单实体搜索：`GET /api/lucene/search/{entity}`
-
-  - Query 参数（来自 `SearchQueryInput`）：`query`、`fuzzy`、`prefix`、`highlight`、`skipCount`、`maxResultCount`、`sorting`
-  - 示例：
-    ```bash
-    curl -G "http://localhost:5000/api/lucene/search/Book" \
-      --data-urlencode "query=Lucene" \
-      --data-urlencode "fuzzy=true" \
-      --data-urlencode "prefix=true" \
-      --data-urlencode "skipCount=0" \
-      --data-urlencode "maxResultCount=10"
     ```
 
-- 多实体聚合搜索：`GET /api/lucene/search-many`
-  - Query 参数（来自 `MultiSearchInput`）：`entities`（必填，数组），以及 `query`、`fuzzy`、`prefix`、`highlight`、`skipCount`、`maxResultCount`、`sorting`
-  - 传递数组参数的方式：`entities=Book&entities=Item`（可重复键）
-  - 示例：
-    ```bash
-    curl -G "http://localhost:5000/api/lucene/search-many" \
-      --data-urlencode "entities=Book" \
-      --data-urlencode "entities=Item" \
-      --data-urlencode "query=title:Lucene OR name:Lucene" \
-      --data-urlencode "prefix=true" \
-      --data-urlencode "fuzzy=false" \
-      --data-urlencode "skipCount=0" \
-      --data-urlencode "maxResultCount=20"
-    ```
-
-返回值
+## 搜索接口返回值
 
 - 两个端点均返回 `SearchResultDto`（分页）：`TotalCount` 与 `Items`。
 - 命中项 `SearchHitDto` 包含：
@@ -99,68 +55,9 @@ await _indexManager.RebuildAsync(typeof(Book));
   - `FuzzyMaxEdits`：模糊查询编辑距离（默认 1）。
 - 若启用了多租户（`PerTenantIndex`），请求在当前租户上下文内检索对应租户的索引目录。
 
-## 数据存储位置
+## 高级
 
-- 默认：`Path.Combine(AppContext.BaseDirectory, "lucene-index")`
-- 开启多租户：`lucene-index/{tenantId}/{indexName}`
-- 可通过 `ZyknowLuceneOptions.IndexRootPath` 配置
-
-## 单元测试
-
-- Domain 测试：验证 Fluent 配置正确生成描述器
-- Application 测试：索引示例实体并验证搜索行为
-
-## 许可协议
-
-MIT
-
-## 索引同步（Synchronizer）
-
-- 目标：保证 Lucene 索引与数据库一致，支持全量/增量修复。
-- 服务：`LuceneIndexSynchronizer`（应用层），支持泛型主键 `SyncAllAsync<T,TKey>` 与按租户 `SyncTenantAsync(tenantId, repositoryFactory)`。
-- 自动投影：
-  - 对仅包含属性字段（`Field`）的实体，系统将“自动根据描述器”只加载必要列（Id + 已注册字段），不构造实体实例。
-  - 使用字典文档工厂 `LuceneDocumentFactory.CreateDocument(IDictionary<string,string>, descriptor)` 构造文档后写入。
-- 回退策略：
-  - 若存在派生字段（`ValueField(Func<T,string>)`）且未声明依赖，自动回退为“完整实体加载+IndexRangeAsync”，保证正确性。
-  - 同步器会记录日志：
-    - 投影路径（Debug）示例：`Lucene sync using projection for {Entity} (Index:{IndexName}) Fields:{Fields}`
-    - 回退路径（Information）示例：`Lucene sync fallback to entity load for {Entity} (Index:{IndexName}). ValueFields:{Fields}`
-- 依赖声明（可选优化）：
-  - 为派生字段使用 `Depends(() => x.Title).Depends(() => x.Description)` 声明所需列，后续可切换为自动投影。
-- 自定义仓储（可选）：
-  - `SyncTenantAsync` 通过 `repositoryFactory(Type entityType)` 接收具体仓储实例，遍历所有已注册实体进行同步。
-
-### 示例：按租户同步
-
-```csharp
-await _synchronizer.SyncTenantAsync(
-    tenantId: CurrentTenant.Id,
-    repositoryFactory: type => type switch
-    {
-        var t when t == typeof(Comic) => ServiceProvider.GetRequiredService<IRepository<Comic, Guid>>(),
-        var t when t == typeof(Video) => ServiceProvider.GetRequiredService<IRepository<Video, Guid>>(),
-        _ => null
-    },
-    batchSize: 1000,
-    deleteMissing: true
-);
-```
-
-### 批量写入文档（字典）
-
-```csharp
-var values = new Dictionary<string, string>
-{
-    [descriptor.IdFieldName] = comic.Id.ToString(),
-    ["Title"] = comic.Title,
-    ["Description"] = comic.Description
-};
-var doc = LuceneDocumentFactory.CreateDocument(values, descriptor);
-await _indexManager.IndexRangeDocumentsAsync(descriptor, new[] { doc }, replace: false);
-```
-
-## 字段配置方法详解（FieldBuilder）
+### 字段配置方法详解（FieldBuilder）
 
 在 `EntitySearchBuilder<T>.Field(expr, configure)` 或 `ValueField(selector, configure)` 的 `configure` 委托中，可使用以下方法配置该字段的写入与检索行为：
 
@@ -198,7 +95,7 @@ await _indexManager.IndexRangeDocumentsAsync(descriptor, new[] { doc }, replace:
   - 默认：不设置。
   - 影响：同步器会优先使用“自动投影”仅加载 `Depends` 声明的列；未声明或存在不可投影委托时，回退为“完整实体加载”，并记录 Info 级日志。
 
-### 配置示例
+#### 配置示例
 
 ```csharp
 model.Entity<Book>(e =>
@@ -217,7 +114,7 @@ model.Entity<Book>(e =>
 });
 ```
 
-## 过滤扩展（FilterProvider）与 LINQ 映射
+### 过滤扩展（FilterProvider）与 LINQ 映射
 
 你可以在应用层通过 `ILuceneFilterProvider` 将自定义过滤接入搜索管线：
 
@@ -240,7 +137,7 @@ model.Entity<Book>(e =>
 - 字段名解析来自 `Descriptor.Fields`；表达式中的成员名需与描述符字段名一致。
 - 性能建议：优先使用前缀/关键字过滤，谨慎使用大范围通配符。
 
-### 示例：按 LibraryId 过滤
+#### 示例：按 LibraryId 过滤
 
 ```csharp
 public class MediumLuceneFilter : ILuceneFilterProvider, IScopedDependency
@@ -255,7 +152,7 @@ public class MediumLuceneFilter : ILuceneFilterProvider, IScopedDependency
 }
 ```
 
-### 范围查询（TermRangeQuery）
+#### 范围查询（TermRangeQuery）
 
 基于词项的范围比较按照“字符串字典序”进行。在索引阶段请先规范化数值/日期，确保排序正确。
 
@@ -280,7 +177,7 @@ var q = LinqLucene.Where(ctx.Descriptor, expr);
 - 精确/规范化字段优先使用 `Keyword()/LowerCaseKeyword()`。
 - 如需真正的数值/日期范围类型，可考虑扩展为 Numeric/Points 查询。
 
-### 关键字大小写不敏感（文化）
+#### 关键字大小写不敏感（文化）
 
 通过 `LowerCaseKeyword()` 或 `LowerCaseKeyword(CultureInfo)` 在索引写入与查询映射阶段统一小写规范化：
 

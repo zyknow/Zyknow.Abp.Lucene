@@ -22,7 +22,7 @@ public class FilteringAndQueryTests
         services.Configure<LuceneOptions>(opt =>
         {
             opt.PerTenantIndex = false;
-            opt.IndexRootPath = Path.Combine(Path.GetTempPath(), "lucene-index-tests");
+            opt.IndexRootPath = Path.Combine(Path.GetTempPath(), "lucene-index-tests", Guid.NewGuid().ToString("N"));
             opt.AnalyzerFactory = AnalyzerFactories.IcuGeneral;
             opt.LuceneQuery.FuzzyMaxEdits = 1;
             opt.LuceneQuery.MultiFieldMode = "OR";
@@ -81,7 +81,7 @@ public class FilteringAndQueryTests
         services.Configure<LuceneOptions>(opt =>
         {
             opt.PerTenantIndex = false;
-            opt.IndexRootPath = Path.Combine(Path.GetTempPath(), "lucene-index-tests");
+            opt.IndexRootPath = Path.Combine(Path.GetTempPath(), "lucene-index-tests", Guid.NewGuid().ToString("N"));
             opt.AnalyzerFactory = AnalyzerFactories.IcuGeneral;
             opt.ConfigureLucene(model =>
             {
@@ -121,7 +121,7 @@ public class FilteringAndQueryTests
         services.Configure<LuceneOptions>(opt =>
         {
             opt.PerTenantIndex = false;
-            opt.IndexRootPath = Path.Combine(Path.GetTempPath(), "lucene-index-tests");
+            opt.IndexRootPath = Path.Combine(Path.GetTempPath(), "lucene-index-tests", Guid.NewGuid().ToString("N"));
             opt.AnalyzerFactory = AnalyzerFactories.IcuGeneral;
             opt.ConfigureLucene(model =>
             {
@@ -161,7 +161,7 @@ public class FilteringAndQueryTests
         services.Configure<LuceneOptions>(opt =>
         {
             opt.PerTenantIndex = false;
-            opt.IndexRootPath = Path.Combine(Path.GetTempPath(), "lucene-index-tests");
+            opt.IndexRootPath = Path.Combine(Path.GetTempPath(), "lucene-index-tests", Guid.NewGuid().ToString("N"));
             opt.AnalyzerFactory = AnalyzerFactories.IcuGeneral;
             opt.ConfigureLucene(model =>
             {

@@ -101,6 +101,40 @@ public class LuceneIndexManager(IOptions<LuceneOptions> options, ICurrentTenant 
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// 按任意字段和值集合删除索引中的文档。
+    /// </summary>
+    public Task DeleteByFieldAsync(EntitySearchDescriptor descriptor, string fieldName, IEnumerable<object> values)
+    {
+        Write(descriptor, writer =>
+        {
+            var terms = values
+                .Where(v => v != null)
+                .Select(v => new Term(fieldName, v.ToString()))
+                .ToArray();
+            if (terms.Length > 0)
+            {
+                writer.DeleteDocuments(terms);
+            }
+        });
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// 按任意字段和值集合删除（泛型实体版本）。
+    /// </summary>
+    public Task DeleteByFieldAsync<T>(string fieldName, IEnumerable<object> values)
+    {
+        var descriptor = GetDescriptor(typeof(T));
+        return DeleteByFieldAsync(descriptor, fieldName, values);
+    }
+
+    /// <summary>
+    /// 按任意字段和单个值删除（泛型实体版本）。
+    /// </summary>
+    public Task DeleteByFieldAsync<T>(string fieldName, object value)
+        => DeleteByFieldAsync<T>(fieldName, new[] { value });
+
     protected virtual EntitySearchDescriptor GetDescriptor(Type type)
     {
         if (!_options.Descriptors.TryGetValue(type, out var descriptor))
@@ -122,7 +156,7 @@ public class LuceneIndexManager(IOptions<LuceneOptions> options, ICurrentTenant 
         writer.Commit();
     }
 
-    protected internal virtual string GetIndexPath(string indexName)
+    public virtual string GetIndexPath(string indexName)
     {
         var root = _options.IndexRootPath;
         if (_options.PerTenantIndex && currentTenant.Id.HasValue)

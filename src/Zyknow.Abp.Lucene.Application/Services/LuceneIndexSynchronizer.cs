@@ -203,6 +203,15 @@ public class LuceneIndexSynchronizer(
     }
 
     /// <summary>
+    /// 便利方法：按任意字段删除指定实体类型的索引文档。
+    /// </summary>
+    public Task DeleteByFieldAsync<T>(string fieldName, IEnumerable<object> values)
+    {
+        var descriptor = GetDescriptor(typeof(T));
+        return indexManager.DeleteByFieldAsync(descriptor, fieldName, values);
+    }
+
+    /// <summary>
     /// 遍历当前租户下所有已注册的实体描述符并执行同步（泛型主键）。
     /// </summary>
     public async Task SyncTenantAsync(Guid? tenantId = null, Func<Type, object>? repositoryFactory = null,

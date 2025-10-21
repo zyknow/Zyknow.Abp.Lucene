@@ -50,7 +50,7 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
-          cache: false
+          # Cache disabled to avoid failing when packages.lock.json is missing in CI
 
       - name: Restore
         run: dotnet restore Zyknow.Abp.Lucene.sln

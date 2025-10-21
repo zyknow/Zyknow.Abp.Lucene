@@ -1,7 +1,7 @@
 <Project>
     <PropertyGroup>
         <LangVersion>latest</LangVersion>
-        <Version>1.0.0</Version>
+        <Version>1.0.0-preview.1</Version>
         <NoWarn>$(NoWarn);CS1591</NoWarn>
         <AbpProjectType>app</AbpProjectType>
         <AbpVersion>9.0.0</AbpVersion>
@@ -13,4 +13,7 @@
             <NoWarn>$(NoWarn);0436</NoWarn>
         </PropertyGroup>
     </Target>
+
+    <!-- 统一导入 NuGet 包元数据配置 -->
+    <Import Project="$(MSBuildThisFileDirectory)nuget.props" />
 </Project>

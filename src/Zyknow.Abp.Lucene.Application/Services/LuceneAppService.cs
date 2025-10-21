@@ -19,6 +19,10 @@ using Zyknow.Abp.Lucene.Filtering;
 using Zyknow.Abp.Lucene.Options;
 using Zyknow.Abp.Lucene.Permissions;
 using Directory = Lucene.Net.Store.Directory;
+// 新增：高亮相关
+using Lucene.Net.Search.Highlight;
+using Lucene.Net.Analysis;
+using System.IO;
 
 namespace Zyknow.Abp.Lucene.Services;
 
@@ -143,11 +147,19 @@ public class LuceneAppService(
                 payload[f.Name] = doc.Get(f.Name);
             }
 
+            // 新增：按需构建高亮片段
+            Dictionary<string, List<string>>? highlights = null;
+            if (input.Highlight)
+            {
+                highlights = BuildHighlights(composed, analyzer, doc, descriptor.Fields.Where(x => x.Store));
+            }
+
             results.Add(new SearchHitDto
             {
                 EntityId = doc.Get(descriptor.IdFieldName) ?? string.Empty,
                 Score = sd.Score,
-                Payload = payload
+                Payload = payload,
+                Highlights = highlights ?? new()
             });
         }
 
@@ -306,11 +318,20 @@ public class LuceneAppService(
                     .Select(d => doc.Get(d.IdFieldName))
                     .FirstOrDefault(s => !string.IsNullOrEmpty(s)) ?? string.Empty;
 
+                // 新增：按需构建高亮片段（对所有存储字段尝试高亮）
+                Dictionary<string, List<string>>? highlights = null;
+                if (input.Highlight)
+                {
+                    var allStoreFields = descriptors.SelectMany(d => d.Fields.Where(x => x.Store));
+                    highlights = BuildHighlights(composed, analyzer, doc, allStoreFields);
+                }
+
                 results.Add(new SearchHitDto
                 {
                     EntityId = id,
                     Score = sd.Score,
-                    Payload = payload
+                    Payload = payload,
+                    Highlights = highlights ?? new()
                 });
             }
 
@@ -432,6 +453,54 @@ public class LuceneAppService(
         }
 
         return "Unknown";
+    }
+
+    // 新增：构建高亮片段
+    private Dictionary<string, List<string>> BuildHighlights(Query query, Analyzer analyzer, Document doc, IEnumerable<FieldDescriptor> fields)
+    {
+        var result = new Dictionary<string, List<string>>();
+        try
+        {
+            var scorer = new QueryScorer(query);
+            var formatter = new SimpleHTMLFormatter("<em>", "</em>");
+            var highlighter = new Highlighter(formatter, scorer)
+            {
+                TextFragmenter = new SimpleSpanFragmenter(scorer, 100)
+            };
+
+            foreach (var f in fields)
+            {
+                var val = doc.Get(f.Name);
+                if (string.IsNullOrEmpty(val)) continue;
+
+                try
+                {
+                    using var reader = new StringReader(val);
+                    var ts = analyzer.GetTokenStream(f.Name, reader);
+                    var frags = highlighter.GetBestTextFragments(ts, val, false, 3);
+                    var pieces = frags
+                        .Where(x => x != null && x.Score > 0)
+                        .Select(x => x.ToString())
+                        .Where(s => !string.IsNullOrWhiteSpace(s))
+                        .ToList();
+                    if (pieces.Count > 0)
+                    {
+                        result[f.Name] = pieces;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // 高亮失败不影响主流程
+                    logger.LogDebug(ex, "Lucene highlight failed for field {Field}", f.Name);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Lucene highlight initialization failed");
+        }
+
+        return result;
     }
 
     protected virtual string GetIndexPath(string indexName)

@@ -1,0 +1,28 @@
+<Project>
+  <PropertyGroup Condition="'$(IsPackable)' != 'false'">
+    <Authors>Zyknow</Authors>
+    <Company>Zyknow</Company>
+    <Description>ABP 框架的 Lucene.Net 集成，提供索引、查询、过滤与高亮能力。</Description>
+    <PackageTags>abp;lucene;lucene.net;volo.abp;search</PackageTags>
+    <RepositoryUrl>https://github.com/zyknow/Zyknow.Abp.Lucene</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/zyknow/Zyknow.Abp.Lucene</PackageProjectUrl>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <GenerateRepositoryUrl>true</GenerateRepositoryUrl>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' != 'false'">
+    <!-- 将根目录的 LICENSE / README.md 打入包中，使 NuGet 页面显示许可证与 Readme -->
+    <None Include="$(MSBuildThisFileDirectory)LICENSE" Pack="true" PackagePath=""/>
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath=""/>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' != 'false'">
+    <!-- 启用 SourceLink（仅在打包项目中引入） -->
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All"/>
+  </ItemGroup>
+</Project>

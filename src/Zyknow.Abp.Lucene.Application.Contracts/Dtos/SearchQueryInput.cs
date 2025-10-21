@@ -33,8 +33,9 @@ public class SearchQueryInput : PagedAndSortedResultRequestDto
 
     /// <summary>
     /// 是否请求高亮片段（Highlights）。
-    /// - 当前实现中，仅返回 <c>Payload</c>（参与存储的字段值）；高亮片段功能预留，后续版本将结合词向量/高亮器提供。
-    /// - 若未来开启高亮，需要在字段级启用 <c>StoreTermVectors</c> 并选择合适的高亮策略。
+    /// - 启用后，服务端会为命中文档的“已存储（Store=true）”字段尝试生成高亮片段，并通过 <see cref="SearchHitDto.Highlights"/> 返回。
+    /// - 片段默认使用 <em> 标签包裹；可读性与准确度受分词与字段内容影响。
+    /// - 建议：为需要高亮的字段开启 <c>Store()</c>；如需更佳效果，可在索引侧考虑启用词向量（StoreTermVectors）。
     /// </summary>
     public bool Highlight { get; set; } = false;
 }

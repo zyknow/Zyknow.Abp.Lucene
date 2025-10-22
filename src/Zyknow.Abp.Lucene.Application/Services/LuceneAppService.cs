@@ -19,7 +19,6 @@ using Zyknow.Abp.Lucene.Filtering;
 using Zyknow.Abp.Lucene.Options;
 using Zyknow.Abp.Lucene.Permissions;
 using Directory = Lucene.Net.Store.Directory;
-// 新增：高亮相关
 using Lucene.Net.Search.Highlight;
 using Lucene.Net.Analysis;
 using System.IO;

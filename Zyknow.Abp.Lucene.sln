@@ -22,6 +22,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".sln", ".sln", "{5AC9B668-B
 		README.zh.md = README.zh.md
 		nuget.props = nuget.props
 		.github\workflows\publish.yml = .github\workflows\publish.yml
+		.github\copilot-instructions.md = .github\copilot-instructions.md
+		.github\commit-convention.md = .github\commit-convention.md
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{B4143E6B-57AB-45DF-848B-B3C507A6C97E}"

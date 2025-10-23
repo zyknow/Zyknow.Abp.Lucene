@@ -1,26 +1,29 @@
 using Lucene.Net.Documents;
 using Lucene.Net.Index;
 using Lucene.Net.Util;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Volo.Abp;
 using Volo.Abp.MultiTenancy;
 using Zyknow.Abp.Lucene.Descriptors;
-using Zyknow.Abp.Lucene.Indexing;
 using Zyknow.Abp.Lucene.Options;
 
-namespace Zyknow.Abp.Lucene.Services;
+namespace Zyknow.Abp.Lucene.Indexing;
 
-public class LuceneIndexManager(IOptions<LuceneOptions> options, ICurrentTenant currentTenant)
+public class LuceneIndexManager(IOptions<LuceneOptions> options, ICurrentTenant currentTenant, ILogger<LuceneIndexManager> logger)
 {
     private readonly LuceneOptions _options = options.Value;
 
     public Task IndexAsync<T>(T entity)
     {
         var descriptor = GetDescriptor(typeof(T));
+        logger.LogInformation("Indexing single entity: {EntityType}", typeof(T).Name);
         Write(descriptor, writer =>
         {
             var doc = LuceneDocumentFactory.CreateDocument(entity!, descriptor);
-            writer.UpdateDocument(new Term(descriptor.IdFieldName, doc.Get(descriptor.IdFieldName)), doc);
+            var id = doc.Get(descriptor.IdFieldName);
+            writer.UpdateDocument(new Term(descriptor.IdFieldName, id), doc);
+            logger.LogDebug("IndexWriter UpdateDocument: {Index} #{Id}", descriptor.IndexName, id);
         });
         return Task.CompletedTask;
     }
@@ -28,18 +31,23 @@ public class LuceneIndexManager(IOptions<LuceneOptions> options, ICurrentTenant 
     public Task IndexRangeAsync<T>(IEnumerable<T> entities, bool replace = false)
     {
         var descriptor = GetDescriptor(typeof(T));
+        var list = entities as ICollection<T> ?? entities.ToList();
+        logger.LogInformation("Indexing {Count} entities into {Index} (replace={Replace})", list.Count, descriptor.IndexName, replace);
         Write(descriptor, writer =>
         {
             if (replace)
             {
                 writer.DeleteAll();
+                logger.LogDebug("IndexWriter DeleteAll: {Index}", descriptor.IndexName);
             }
 
-            foreach (var entity in entities)
+            foreach (var entity in list)
             {
                 var doc = LuceneDocumentFactory.CreateDocument(entity!, descriptor);
-                writer.UpdateDocument(new Term(descriptor.IdFieldName, doc.Get(descriptor.IdFieldName)), doc);
+                var id = doc.Get(descriptor.IdFieldName);
+                writer.UpdateDocument(new Term(descriptor.IdFieldName, id), doc);
             }
+            logger.LogDebug("IndexWriter UpdateDocument batch done: {Index} x{Count}", descriptor.IndexName, list.Count);
         });
         return Task.CompletedTask;
     }
@@ -47,18 +55,22 @@ public class LuceneIndexManager(IOptions<LuceneOptions> options, ICurrentTenant 
     public Task IndexRangeDocumentsAsync(EntitySearchDescriptor descriptor, IEnumerable<Document> documents,
         bool replace = false)
     {
+        var docs = documents as ICollection<Document> ?? documents.ToList();
+        logger.LogInformation("Indexing {Count} raw documents into {Index} (replace={Replace})", docs.Count, descriptor.IndexName, replace);
         Write(descriptor, writer =>
         {
             if (replace)
             {
                 writer.DeleteAll();
+                logger.LogDebug("IndexWriter DeleteAll: {Index}", descriptor.IndexName);
             }
 
-            foreach (var doc in documents)
+            foreach (var doc in docs)
             {
                 var id = doc.Get(descriptor.IdFieldName);
                 writer.UpdateDocument(new Term(descriptor.IdFieldName, id), doc);
             }
+            logger.LogDebug("IndexWriter UpdateDocument batch done: {Index} x{Count}", descriptor.IndexName, docs.Count);
         });
         return Task.CompletedTask;
     }
@@ -66,7 +78,12 @@ public class LuceneIndexManager(IOptions<LuceneOptions> options, ICurrentTenant 
     public Task DeleteAsync<T>(object id)
     {
         var descriptor = GetDescriptor(typeof(T));
-        Write(descriptor, writer => { writer.DeleteDocuments(new Term(descriptor.IdFieldName, id.ToString())); });
+        logger.LogInformation("Deleting single document from {Index}: #{Id}", descriptor.IndexName, id);
+        Write(descriptor, writer =>
+        {
+            writer.DeleteDocuments(new Term(descriptor.IdFieldName, id.ToString()));
+            logger.LogDebug("IndexWriter DeleteDocuments: {Index} #{Id}", descriptor.IndexName, id);
+        });
         return Task.CompletedTask;
     }
 
@@ -74,15 +91,25 @@ public class LuceneIndexManager(IOptions<LuceneOptions> options, ICurrentTenant 
     {
         if (entityType == null)
         {
+            logger.LogInformation("Rebuild: delete all indexes for all configured entities ({Count})", _options.Descriptors.Count);
             foreach (var d in _options.Descriptors.Values)
             {
-                Write(d, writer => writer.DeleteAll());
+                Write(d, writer =>
+                {
+                    writer.DeleteAll();
+                    logger.LogDebug("IndexWriter DeleteAll: {Index}", d.IndexName);
+                });
             }
         }
         else
         {
             var d = GetDescriptor(entityType);
-            Write(d, writer => writer.DeleteAll());
+            logger.LogInformation("Rebuild: delete all documents for {Index}", d.IndexName);
+            Write(d, writer =>
+            {
+                writer.DeleteAll();
+                logger.LogDebug("IndexWriter DeleteAll: {Index}", d.IndexName);
+            });
         }
 
         return Task.CompletedTask;
@@ -91,12 +118,15 @@ public class LuceneIndexManager(IOptions<LuceneOptions> options, ICurrentTenant 
     public Task DeleteRangeAsync<T>(IEnumerable<object> ids)
     {
         var descriptor = GetDescriptor(typeof(T));
+        var list = ids as ICollection<object> ?? ids.ToList();
+        logger.LogInformation("Deleting {Count} documents from {Index}", list.Count, descriptor.IndexName);
         Write(descriptor, writer =>
         {
-            foreach (var id in ids)
+            foreach (var id in list)
             {
                 writer.DeleteDocuments(new Term(descriptor.IdFieldName, id.ToString()));
             }
+            logger.LogDebug("IndexWriter Delete batch done: {Index} x{Count}", descriptor.IndexName, list.Count);
         });
         return Task.CompletedTask;
     }
@@ -106,15 +136,15 @@ public class LuceneIndexManager(IOptions<LuceneOptions> options, ICurrentTenant 
     /// </summary>
     public Task DeleteByFieldAsync(EntitySearchDescriptor descriptor, string fieldName, IEnumerable<object> values)
     {
+        var vals = values?.Where(v => v != null).Select(v => v.ToString()!).ToList() ?? new List<string>();
+        logger.LogInformation("DeleteByField: index={Index}, field={Field}, valuesCount={Count}", descriptor.IndexName, fieldName, vals.Count);
         Write(descriptor, writer =>
         {
-            var terms = values
-                .Where(v => v != null)
-                .Select(v => new Term(fieldName, v.ToString()))
-                .ToArray();
+            var terms = vals.Select(v => new Term(fieldName, v)).ToArray();
             if (terms.Length > 0)
             {
                 writer.DeleteDocuments(terms);
+                logger.LogDebug("IndexWriter DeleteDocuments by field: {Index} {Field} x{Count}", descriptor.IndexName, fieldName, terms.Length);
             }
         });
         return Task.CompletedTask;
@@ -148,12 +178,14 @@ public class LuceneIndexManager(IOptions<LuceneOptions> options, ICurrentTenant 
     protected virtual void Write(EntitySearchDescriptor descriptor, Action<IndexWriter> action)
     {
         var indexPath = GetIndexPath(descriptor.IndexName);
+        logger.LogDebug("Open IndexWriter: {Index} path={Path}", descriptor.IndexName, indexPath);
         using var dir = _options.DirectoryFactory(indexPath);
         var analyzer = _options.AnalyzerFactory();
         var config = new IndexWriterConfig(LuceneVersion.LUCENE_48, analyzer);
         using var writer = new IndexWriter(dir, config);
         action(writer);
         writer.Commit();
+        logger.LogInformation("Committed changes to index: {Index}", descriptor.IndexName);
     }
 
     public virtual string GetIndexPath(string indexName)

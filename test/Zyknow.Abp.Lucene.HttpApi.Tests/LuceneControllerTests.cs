@@ -15,6 +15,7 @@ using Zyknow.Abp.Lucene.Options;
 using Zyknow.Abp.Lucene.Services;
 using Zyknow.Abp.Lucene.Controllers;
 using Volo.Abp.MultiTenancy;
+using Zyknow.Abp.Lucene.Indexing;
 
 namespace Zyknow.Abp.Lucene.HttpApi.Tests;
 

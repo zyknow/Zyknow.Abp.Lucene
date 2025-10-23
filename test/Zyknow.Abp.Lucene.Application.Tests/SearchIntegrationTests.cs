@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Volo.Abp.MultiTenancy;
 using Zyknow.Abp.Lucene.Analyzers;
 using Zyknow.Abp.Lucene.Application.Tests.Fakes;
+using Zyknow.Abp.Lucene.Indexing;
 using Zyknow.Abp.Lucene.Options;
 using Zyknow.Abp.Lucene.Services;
 

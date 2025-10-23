@@ -6,6 +6,7 @@ using Zyknow.Abp.Lucene.Analyzers;
 using Zyknow.Abp.Lucene.Application.Tests.Fakes;
 using Zyknow.Abp.Lucene.Dtos;
 using Zyknow.Abp.Lucene.Filtering;
+using Zyknow.Abp.Lucene.Indexing;
 using Zyknow.Abp.Lucene.Options;
 using Zyknow.Abp.Lucene.Services;
 

@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Volo.Abp.Modularity;
-using Zyknow.Abp.Lucene.Services;
+using Zyknow.Abp.Lucene.Indexing;
 
 namespace Zyknow.Abp.Lucene;
 

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.Domain.Entities;
 using Volo.Abp.Domain.Entities.Events;
@@ -20,7 +21,8 @@ public class GenericIndexingHandler<T>(
     IIndexingCollector collector,
     IUnitOfWorkManager uow,
     LuceneIndexManager indexer,
-    IOptions<LuceneOptions> options)
+    IOptions<LuceneOptions> options,
+    ILogger<GenericIndexingHandler<T>> logger)
     :
         ILocalEventHandler<EntityCreatedEventData<T>>,
         ILocalEventHandler<EntityUpdatedEventData<T>>,
@@ -29,6 +31,7 @@ public class GenericIndexingHandler<T>(
 {
     public Task HandleEventAsync(EntityCreatedEventData<T> eventData)
     {
+        logger.LogDebug("EntityCreated received: {EntityType}", typeof(T).Name);
         return HandleUpsert(eventData.Entity);
     }
 
@@ -36,6 +39,7 @@ public class GenericIndexingHandler<T>(
     {
         if (!IsConfigured())
         {
+            logger.LogTrace("Skip indexing (not configured or disabled): {EntityType}", typeof(T).Name);
             return Task.CompletedTask;
         }
 
@@ -43,6 +47,7 @@ public class GenericIndexingHandler<T>(
         if (id != null)
         {
             collector.Delete<T>(id);
+            logger.LogDebug("Queued delete: {EntityType} #{Id}", typeof(T).Name, id);
             RegisterOnce();
         }
 
@@ -51,6 +56,7 @@ public class GenericIndexingHandler<T>(
 
     public Task HandleEventAsync(EntityUpdatedEventData<T> eventData)
     {
+        logger.LogDebug("EntityUpdated received: {EntityType}", typeof(T).Name);
         return HandleUpsert(eventData.Entity);
     }
 
@@ -58,6 +64,7 @@ public class GenericIndexingHandler<T>(
     {
         if (!IsConfigured())
         {
+            logger.LogTrace("Skip indexing (not configured or disabled): {EntityType}", typeof(T).Name);
             return Task.CompletedTask;
         }
 
@@ -65,6 +72,7 @@ public class GenericIndexingHandler<T>(
         if (id != null)
         {
             collector.Upsert(entity, id);
+            logger.LogDebug("Queued upsert: {EntityType} #{Id}", typeof(T).Name, id);
             RegisterOnce();
         }
 
@@ -87,10 +95,12 @@ public class GenericIndexingHandler<T>(
         var current = uow.Current;
         if (current != null)
         {
+            logger.LogDebug("Register OnCompleted for {EntityType}", typeof(T).Name);
             collector.RegisterOnCompleted(current, indexer);
         }
         else
         {
+            logger.LogDebug("No active UoW, process immediately for {EntityType}", typeof(T).Name);
             // 无 UoW 情况：立即执行批处理
             collector.ProcessImmediatelyAsync(indexer).GetAwaiter().GetResult();
         }
@@ -103,13 +113,11 @@ public class GenericIndexingHandler<T>(
             return null;
         }
 
-        // 优先使用 Guid 主键的接口（项目约定使用 Guid）
         if (entity is IEntity<Guid> g)
         {
             return g.Id.ToString();
         }
 
-        // 反射回退
         var prop = entity.GetType().GetProperty("Id");
         var val = prop?.GetValue(entity);
         return val?.ToString();

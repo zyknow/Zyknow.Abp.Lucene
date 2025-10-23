@@ -5,6 +5,7 @@ using Zyknow.Abp.Lucene.Application.Tests.Fakes;
 using Zyknow.Abp.Lucene.Options;
 using Zyknow.Abp.Lucene.Services;
 using Zyknow.Abp.Lucene.Dtos;
+using Zyknow.Abp.Lucene.Indexing;
 
 namespace Zyknow.Abp.Lucene.Application.Tests;
 

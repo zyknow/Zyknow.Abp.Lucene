@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Simple.Domain.Shared\Simple.Domain.Shared.csproj" />
+    <ProjectReference Include="..\..\..\src\Zyknow.Abp.Lucene.Domain\Zyknow.Abp.Lucene.Domain.csproj" />
   </ItemGroup>
 
   <ItemGroup>

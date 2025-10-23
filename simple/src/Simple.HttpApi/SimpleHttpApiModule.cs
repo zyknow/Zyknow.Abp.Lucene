@@ -8,6 +8,7 @@ using Volo.Abp.Modularity;
 using Volo.Abp.PermissionManagement.HttpApi;
 using Volo.Abp.Localization;
 using Volo.Abp.TenantManagement;
+using Zyknow.Abp.Lucene; // 引入 Lucene 模块
 
 namespace Simple;
 
@@ -18,7 +19,8 @@ namespace Simple;
     typeof(AbpAccountHttpApiModule),
     typeof(AbpIdentityHttpApiModule),
     typeof(AbpTenantManagementHttpApiModule),
-    typeof(AbpFeatureManagementHttpApiModule)
+    typeof(AbpFeatureManagementHttpApiModule),
+    typeof(ZyknowLuceneHttpApiModule) // 追加 Lucene HttpApi 模块
     )]
 public class SimpleHttpApiModule : AbpModule
 {

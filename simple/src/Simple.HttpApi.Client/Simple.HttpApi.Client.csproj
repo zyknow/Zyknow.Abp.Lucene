@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Simple.Application.Contracts\Simple.Application.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\src\Zyknow.Abp.Lucene.Application.Contracts\Zyknow.Abp.Lucene.Application.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

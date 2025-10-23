@@ -13,6 +13,7 @@ using Volo.Abp.VirtualFileSystem;
 using Volo.Abp.OpenIddict;
 using Volo.Abp.BlobStoring.Database;
 using Volo.Abp.TenantManagement;
+using Zyknow.Abp.Lucene; // 引入 Lucene 模块命名空间
 
 namespace Simple;
 
@@ -25,7 +26,8 @@ namespace Simple;
     typeof(AbpIdentityDomainSharedModule),
     typeof(AbpOpenIddictDomainSharedModule),
     typeof(AbpTenantManagementDomainSharedModule),
-    typeof(BlobStoringDatabaseDomainSharedModule)
+    typeof(BlobStoringDatabaseDomainSharedModule),
+    typeof(ZyknowLuceneDomainSharedModule) // 追加 Lucene 领域共享模块
     )]
 public class SimpleDomainSharedModule : AbpModule
 {

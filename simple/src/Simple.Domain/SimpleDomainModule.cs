@@ -17,6 +17,7 @@ using Volo.Abp.Emailing;
 using Volo.Abp.FeatureManagement;
 using Volo.Abp.Identity;
 using Volo.Abp.TenantManagement;
+using Zyknow.Abp.Lucene; // 引入 Lucene 模块
 
 namespace Simple;
 
@@ -33,7 +34,8 @@ namespace Simple;
     typeof(AbpIdentityDomainModule),
     typeof(AbpOpenIddictDomainModule),
     typeof(AbpTenantManagementDomainModule),
-    typeof(BlobStoringDatabaseDomainModule)
+    typeof(BlobStoringDatabaseDomainModule),
+    typeof(ZyknowLuceneDomainModule) // 追加 Lucene 领域模块
     )]
 public class SimpleDomainModule : AbpModule
 {

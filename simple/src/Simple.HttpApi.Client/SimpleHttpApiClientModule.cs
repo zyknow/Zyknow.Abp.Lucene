@@ -7,6 +7,7 @@ using Volo.Abp.VirtualFileSystem;
 using Volo.Abp.FeatureManagement;
 using Volo.Abp.Identity;
 using Volo.Abp.TenantManagement;
+using Zyknow.Abp.Lucene; // 引入 Lucene 模块以获取 Application.Contracts 程序集
 
 namespace Simple;
 
@@ -17,7 +18,8 @@ namespace Simple;
     typeof(AbpAccountHttpApiClientModule),
     typeof(AbpIdentityHttpApiClientModule),
     typeof(AbpTenantManagementHttpApiClientModule),
-    typeof(AbpSettingManagementHttpApiClientModule)
+    typeof(AbpSettingManagementHttpApiClientModule),
+    typeof(ZyknowLuceneApplicationContractsModule) // 追加 Lucene 合同模块以生成代理
 )]
 public class SimpleHttpApiClientModule : AbpModule
 {
@@ -27,6 +29,11 @@ public class SimpleHttpApiClientModule : AbpModule
     {
         context.Services.AddHttpClientProxies(
             typeof(SimpleApplicationContractsModule).Assembly,
+            RemoteServiceName
+        );
+        // 为 Lucene 端点生成客户端代理
+        context.Services.AddHttpClientProxies(
+            typeof(ZyknowLuceneApplicationContractsModule).Assembly,
             RemoteServiceName
         );
 

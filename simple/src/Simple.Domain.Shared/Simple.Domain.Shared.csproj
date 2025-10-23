@@ -34,4 +34,8 @@
     <Content Remove="Localization\Simple\*.json" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Zyknow.Abp.Lucene.Domain.Shared\Zyknow.Abp.Lucene.Domain.Shared.csproj" />
+  </ItemGroup>
+
 </Project>

@@ -40,6 +40,7 @@ using System;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Extensions.DependencyInjection;
+using Simple.Books;
 using Volo.Abp.Account.Web;
 using Volo.Abp.AspNetCore.Mvc.UI.Bundling;
 using Volo.Abp.AspNetCore.Mvc.UI.Theme.Shared.Toolbars;
@@ -50,6 +51,8 @@ using Volo.Abp.OpenIddict;
 using Volo.Abp.Security.Claims;
 using Volo.Abp.SettingManagement.Web;
 using Volo.Abp.Studio.Client.AspNetCore;
+using Zyknow.Abp.Lucene.Analyzers;
+using Zyknow.Abp.Lucene.Options;
 
 namespace Simple.Web;
 
@@ -155,6 +158,23 @@ public class SimpleWebModule : AbpModule
             options.Conventions.AuthorizePage("/Books/Index", SimplePermissions.Books.Default);
             options.Conventions.AuthorizePage("/Books/CreateModal", SimplePermissions.Books.Create);
             options.Conventions.AuthorizePage("/Books/EditModal", SimplePermissions.Books.Edit);
+        });
+        
+        Configure<LuceneOptions>(opt =>
+        {
+            // opt.IndexRootPath = Path.Combine(AppContext.BaseDirectory, "lucene-index");
+            opt.IndexRootPath = "lucene-index";
+            opt.PerTenantIndex = true;
+            opt.AnalyzerFactory = AnalyzerFactories.IcuGeneral;
+            opt.ConfigureLucene(model =>
+            {
+                model.Entity<Book>(e =>
+                {
+                    e.Field(x => x.Name, f => f.Store());
+                    e.Field(x => x.Price, f => f.StoreOnly());
+                    e.Field(x => x.PublishDate, f => f.StoreOnly());
+                });
+            });
         });
     }
 

@@ -130,6 +130,105 @@ public class LuceneIndexSynchronizer(
         }
     }
 
+    /// <summary>
+    /// 同步并返回处理的文档数（不包含删除）。
+    /// </summary>
+    public async Task<int> SyncAllAndCountAsync<T, TKey>(IRepository<T, TKey> repository, int batchSize = 1000,
+        bool deleteMissing = true, CancellationToken ct = default)
+        where T : class, IEntity<TKey>
+        where TKey : notnull
+    {
+        var descriptor = GetDescriptor(typeof(T));
+        var hasValueSelectors = descriptor.Fields.Any(f => f.ValueSelector != null);
+        var total = 0;
+
+        if (!hasValueSelectors)
+        {
+            var propNames = descriptor.Fields
+                .Where(f => f.Selector != null)
+                .Select(f => InferNameLocal(f.Selector!))
+                .Distinct()
+                .ToList();
+
+            logger.LogDebug("Lucene sync(count) using projection for {Entity} (Index:{IndexName}) Fields:{Fields}",
+                typeof(T).FullName, descriptor.IndexName, string.Join(",", propNames));
+
+            var skip = 0;
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+                var query = await repository.GetQueryableAsync();
+                var selector = BuildProjectionSelector<T>(propNames, descriptor.IdFieldName);
+                var projected = query.Select(selector).Skip(skip).Take(batchSize);
+                var rows = await asyncExecuter.ToListAsync(projected, ct);
+                if (rows.Count == 0)
+                {
+                    break;
+                }
+
+                var docs = new List<Document>(rows.Count);
+                foreach (var row in rows)
+                {
+                    var values = new Dictionary<string, string>(propNames.Count + 1)
+                    {
+                        [descriptor.IdFieldName] = row.Id?.ToString() ?? string.Empty
+                    };
+                    for (var i = 0; i < propNames.Count; i++)
+                    {
+                        var val = GetV(row, i)?.ToString() ?? string.Empty;
+                        values[propNames[i]] = val;
+                    }
+
+                    docs.Add(LuceneDocumentFactory.CreateDocument(values, descriptor));
+                }
+
+                await indexManager.IndexRangeDocumentsAsync(descriptor, docs, false);
+                total += rows.Count;
+                skip += rows.Count;
+            }
+        }
+        else
+        {
+            logger.LogInformation(
+                "Lucene sync(count) fallback to entity load for {Entity} (Index:{IndexName})",
+                typeof(T).FullName, descriptor.IndexName);
+
+            var skip = 0;
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+                var query = await repository.GetQueryableAsync();
+                var batchQuery = query.Skip(skip).Take(batchSize);
+                var batch = await asyncExecuter.ToListAsync(batchQuery, ct);
+                if (batch.Count == 0)
+                {
+                    break;
+                }
+
+                await indexManager.IndexRangeAsync(batch, false);
+                total += batch.Count;
+                skip += batch.Count;
+            }
+        }
+
+        if (deleteMissing)
+        {
+            var dbIdQuery = (await repository.GetQueryableAsync()).Select(x => x.Id);
+            var dbIds = await asyncExecuter.ToListAsync(dbIdQuery, ct);
+            var dbIdStrings = new HashSet<string>(dbIds.Select(x => x?.ToString() ?? string.Empty));
+
+            var descriptor2 = GetDescriptor(typeof(T));
+            var indexIds = await ListIndexedIdsAsync(descriptor2);
+            var staleIds = indexIds.Where(id => !dbIdStrings.Contains(id)).Cast<object>().ToList();
+            if (staleIds.Count > 0)
+            {
+                await indexManager.DeleteRangeAsync<T>(staleIds);
+            }
+        }
+
+        return total;
+    }
+
     private static object? GetV(IndexShape row, int idx)
     {
         return idx switch
@@ -200,6 +299,16 @@ public class LuceneIndexSynchronizer(
         where T : class, IEntity<Guid>
     {
         return SyncAllAsync<T, Guid>(repository, batchSize, deleteMissing, ct);
+    }
+
+    /// <summary>
+    /// Guid 主键版本（计数），内部委托到泛型主键版本。
+    /// </summary>
+    public Task<int> SyncAllAndCountAsync<T>(IRepository<T, Guid> repository, int batchSize = 1000, bool deleteMissing = true,
+        CancellationToken ct = default)
+        where T : class, IEntity<Guid>
+    {
+        return SyncAllAndCountAsync<T, Guid>(repository, batchSize, deleteMissing, ct);
     }
 
     /// <summary>

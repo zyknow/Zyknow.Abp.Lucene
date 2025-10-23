@@ -387,7 +387,8 @@ public class LuceneAppService(
             throw new BusinessException("Lucene:EntityNotConfigured").WithData("Entity", entityName);
         }
 
-        var cleared = await RebuildIndexAsync(entityName);
+        // 先重建以确保目录与写入器存在
+        await RebuildIndexAsync(entityName);
 
         // 反射解析仓储 IRepository<TEntity, TKey>
         var entityType = descriptor.EntityType;
@@ -396,15 +397,55 @@ public class LuceneAppService(
             ?.GetGenericArguments().FirstOrDefault() ?? typeof(Guid);
 
         var repoType = typeof(IRepository<,>).MakeGenericType(entityType, keyType);
-        var repository = serviceProvider.GetService(repoType);
+        object? repository = serviceProvider.GetService(repoType);
+        if (repository is null)
+        {
+            // 回退：尝试解析单泛型仓储 IRepository<TEntity>
+            var repoSingleType = typeof(IRepository<>).MakeGenericType(entityType);
+            repository = serviceProvider.GetService(repoSingleType);
+        }
+
         if (repository is null)
         {
             logger.LogWarning("Lucene rebuild+index: repository not found for entity {Entity}", entityType.FullName);
-            return cleared;
+            // 无仓储无法同步，返回当前索引文档数（重建后通常为0）
+            return await GetIndexDocumentCountInternalAsync(descriptor);
         }
 
-        // 调用 LuceneIndexSynchronizer.SyncAllAsync<T,TKey>
         var synchronizer = serviceProvider.GetRequiredService<LuceneIndexSynchronizer>();
+
+        // 优先尝试调用 SyncAllAndCountAsync<T,TKey> 获取处理条数
+        var countMethod = typeof(LuceneIndexSynchronizer)
+            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .FirstOrDefault(m => m.Name == nameof(LuceneIndexSynchronizer.SyncAllAndCountAsync)
+                                  && m.IsGenericMethodDefinition
+                                  && m.GetGenericArguments().Length == 2);
+        if (countMethod != null && repoType.IsInstanceOfType(repository))
+        {
+            try
+            {
+                var gCount = countMethod.MakeGenericMethod(entityType, keyType);
+                logger.LogInformation("Lucene rebuild+index: start SyncAllAndCount for {Entity} with batchSize {Batch}",
+                    entityType.FullName, batchSize);
+                var processed = await (Task<int>)gCount.Invoke(synchronizer,
+                    [repository, batchSize, true, CancellationToken.None])!;
+                logger.LogInformation("Lucene rebuild+index: completed for {Entity}, processed={Processed}",
+                    entityType.FullName, processed);
+                // 若读取索引计数仍为0，但处理>0，则返回处理数以避免误判
+                var indexed = await GetIndexDocumentCountInternalAsync(descriptor);
+                return indexed > 0 ? indexed : processed;
+            }
+            catch (TargetInvocationException tie)
+            {
+                logger.LogWarning(tie, "Lucene rebuild+index: SyncAllAndCount failed for {Entity}, fallback to SyncAll", entityType.FullName);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Lucene rebuild+index: SyncAllAndCount failed for {Entity}, fallback to SyncAll", entityType.FullName);
+            }
+        }
+
+        // 回退：调用 SyncAllAsync<T,TKey>
         var method = typeof(LuceneIndexSynchronizer)
             .GetMethods(BindingFlags.Instance | BindingFlags.Public)
             .First(m => m.Name == nameof(LuceneIndexSynchronizer.SyncAllAsync) && m.IsGenericMethodDefinition &&
@@ -416,7 +457,7 @@ public class LuceneAppService(
             [repository, batchSize, true, CancellationToken.None])!;
         logger.LogInformation("Lucene rebuild+index: completed for {Entity}", entityType.FullName);
 
-        return cleared;
+        return await GetIndexDocumentCountInternalAsync(descriptor);
     }
 
     [Authorize(ZyknowLucenePermissions.Indexing.Default)]
@@ -511,5 +552,17 @@ public class LuceneAppService(
         }
 
         return Path.Combine(root, indexName);
+    }
+
+    // 内部帮助：读取指定描述符的当前文档数
+    private async Task<int> GetIndexDocumentCountInternalAsync(EntitySearchDescriptor descriptor)
+    {
+        await Task.Yield();
+        var indexPath = GetIndexPath(descriptor.IndexName);
+        using var dir = _options.DirectoryFactory(indexPath);
+        using var reader = DirectoryReader.Open(dir);
+        logger.LogInformation("Lucene index {Index} at {Path} has {Count} docs", descriptor.IndexName, indexPath,
+            reader.MaxDoc);
+        return reader.MaxDoc;
     }
 }

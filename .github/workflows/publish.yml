@@ -64,29 +64,16 @@ jobs:
           $before = '${{ github.event.before }}'
           $after = '${{ github.sha }}'
 
-          function Get-VersionFromCommit([string]$sha) {
-            try {
-              $content = git show "$sha:common.props" 2>$null
-              if ([string]::IsNullOrWhiteSpace($content)) { return '' }
-              [xml]$xml = $content
-              return $xml.Project.PropertyGroup.Version
-            } catch { return '' }
-          }
-
-          $beforeVersion = Get-VersionFromCommit $before
-          $afterVersion = Get-VersionFromCommit $after
-          $versionChanged = $false
-          if (-not [string]::IsNullOrWhiteSpace($afterVersion) -and $beforeVersion -ne $afterVersion) { $versionChanged = $true }
-
           $log = git log --format=%B $before..$after 2>$null
-          $forceByMsg = $false
+          $hasPublishNuget = $false
           if ($log) {
-            if ($log -match '(?is)\[(release|publish)\]|(^|\s)(release|publish)(:|\s|$)') { $forceByMsg = $true }
+            # 区分大小写、逐行匹配，并要求在行首匹配
+            if ($log -cmatch '(?m)^Publish Nuget') { $hasPublishNuget = $true }
           }
 
-          $proceed = $versionChanged -or $forceByMsg
+          $proceed = $hasPublishNuget
           "proceed=$proceed" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          $reason = if ($versionChanged) { "Version changed $beforeVersion -> $afterVersion" } elseif ($forceByMsg) { "Commit message override" } else { "No version change and no override" }
+          $reason = if ($hasPublishNuget) { "Found 'Publish Nuget' at start of a line in commits" } else { "Commit messages missing line-start 'Publish Nuget' (case-sensitive)" }
           "reason=$reason" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Echo decision

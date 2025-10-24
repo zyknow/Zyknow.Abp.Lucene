@@ -189,3 +189,46 @@ model.Entity<Tag>(e =>
 ```
 
 该配置会在索引写入与 LINQ → Lucene 映射（Term/Prefix/Wildcard/IN）时应用小写转换以确保匹配一致。
+
+### 并发与 UnitOfWork（重要）
+
+在同一个 HTTP 请求中并行执行多段数据库写入时，ABP 的请求级 UoW 会通过 AsyncLocal 传播到子任务，若直接在子任务中调用 `Begin()`（非 `requiresNew`），可能复用同一 UoW，导致：
+- 抛出错误：This unit of work has already been initialized.
+- 多任务写入被合并在同一批次，引发索引计数抖动。
+
+为确保并发稳定性与索引一致性，推荐以下任一做法：
+
+1) 每个并发任务使用独立事务（推荐）
+
+```csharp
+// 为每个任务开启独立 UoW（requiresNew: true）
+using var uow = uowManager.Begin(new AbpUnitOfWorkOptions { IsTransactional = true }, requiresNew: true);
+// 批量写入...
+await uow.CompleteAsync();
+```
+
+2) 抑制执行上下文流动 + 常规 Begin
+
+```csharp
+var afc = ExecutionContext.SuppressFlow();
+try
+{
+    await Task.Run(async () =>
+    {
+        using (CurrentTenant.Change(tenantId, tenantName))
+        using (var uow = uowManager.Begin(new AbpUnitOfWorkOptions { IsTransactional = true }))
+        {
+            // 批量写入...
+            await uow.CompleteAsync();
+        }
+    });
+}
+finally
+{
+    afc.Undo();
+}
+```
+
+补充：
+- 若你不在同一 HTTP 请求里并发执行，而是通过后台作业/队列做并发，每个作业天然拥有独立作用域与 UoW，无需上述处理。
+- 本模块已在内部修复了“UoW 内新增时 Id 尚未生成导致的索引覆盖”问题，但 UoW 边界与并发事务隔离仍需由调用方按上述方式处理。

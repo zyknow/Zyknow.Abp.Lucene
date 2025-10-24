@@ -92,7 +92,7 @@ Within `EntitySearchBuilder<T>.Field(expr, configure)` or `ValueField(selector, 
   - Note: currently a configuration hint; to enable highlighting/snippet generation, combine with `TermVector` at search time or extend index writing.
 
 - `Depends(Expression<Func<object>> member)`
-  - Purpose: declare dependencies for `ValueField` (derived text) so the synchronizer can load only necessary columns and compute the derived text.
+  - Purpose: declare dependencies for `ValueField` so the synchronizer can load only necessary columns and compute derived text.
   - Default: not set.
   - Effect: the synchronizer prioritizes automatic projection to load only declared columns; if missing or non-projectable delegates exist, it falls back to full entity loading and logs at Info level.
 
@@ -190,3 +190,46 @@ model.Entity<Tag>(e =>
 ```
 
 This applies lowercasing during indexing and in LINQ → Lucene mapping (Term/Prefix/Wildcard/IN) to ensure consistent matching.
+
+### Concurrency & UnitOfWork (important)
+
+When you run multiple database writes in parallel within the same HTTP request, ABP's request-scoped UnitOfWork propagates via AsyncLocal into child tasks. Calling `Begin()` inside these tasks (without `requiresNew`) may reuse the same UoW and cause:
+- Exception: This unit of work has already been initialized.
+- Batching side-effects across tasks, resulting in index count jitters.
+
+To ensure stable concurrency and index consistency, pick either approach:
+
+1) Independent transaction per task (recommended)
+
+```csharp
+// Start an independent UoW for each task (requiresNew: true)
+using var uow = uowManager.Begin(new AbpUnitOfWorkOptions { IsTransactional = true }, requiresNew: true);
+// write...
+await uow.CompleteAsync();
+```
+
+2) Suppress ExecutionContext flow + regular Begin
+
+```csharp
+var afc = ExecutionContext.SuppressFlow();
+try
+{
+    await Task.Run(async () =>
+    {
+        using (CurrentTenant.Change(tenantId, tenantName))
+        using (var uow = uowManager.Begin(new AbpUnitOfWorkOptions { IsTransactional = true }))
+        {
+            // write...
+            await uow.CompleteAsync();
+        }
+    });
+}
+finally
+{
+    afc.Undo();
+}
+```
+
+Notes:
+- If you do concurrency via background jobs/queue instead of inside a single HTTP request, each job naturally has its own scope and UoW, so no special handling is required.
+- The module internally fixes the issue where inserts within a UoW could overwrite each other if IDs are not yet generated. However, UoW boundaries and concurrent transaction isolation must still be handled by the caller as shown above.

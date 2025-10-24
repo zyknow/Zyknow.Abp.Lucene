@@ -46,6 +46,8 @@ public class LuceneControllerTests
                     });
                 });
                 services.AddSingleton<LuceneIndexManager>();
+                // 新增：注册 SearcherProvider 供 LuceneAppService 查询使用
+                services.AddSingleton<ILuceneSearcherProvider, LuceneSearcherProvider>();
                 services.AddSingleton<ILuceneService, LuceneAppService>();
             })
             .Configure(app =>
@@ -62,7 +64,7 @@ public class LuceneControllerTests
         await indexer.IndexRangeAsync(new[]
         {
             new Book("1", "Lucene in Action", "Erik", "B001"),
-            new Book("2", "Pro .NET Lucene", "John", "B002")
+            new Book("2", ".NET Lucene in Practice", "John", "B002")
         }, replace: true);
 
         var client = server.CreateClient();

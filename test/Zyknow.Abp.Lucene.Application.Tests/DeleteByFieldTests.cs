@@ -31,6 +31,8 @@ public class DeleteByFieldTests
             });
         });
         services.AddSingleton<LuceneIndexManager>();
+        // 新增：注册 SearcherProvider 以供 LuceneAppService 查询使用
+        services.AddSingleton<ILuceneSearcherProvider, LuceneSearcherProvider>();
         services.AddSingleton<LuceneAppService>();
         services.AddSingleton<ICurrentTenant>(new FakeCurrentTenant { Id = null });
         services.AddLogging();
@@ -86,6 +88,8 @@ public class DeleteByFieldTests
             });
         });
         services.AddSingleton<LuceneIndexManager>();
+        // 新增：注册 SearcherProvider 以供 LuceneAppService 查询使用
+        services.AddSingleton<ILuceneSearcherProvider, LuceneSearcherProvider>();
         services.AddSingleton<LuceneAppService>();
         services.AddSingleton<ICurrentTenant>(new FakeCurrentTenant { Id = null });
         services.AddLogging();

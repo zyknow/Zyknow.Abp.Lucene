@@ -29,10 +29,12 @@ public class LuceneAppService(
     ICurrentTenant currentTenant,
     ILogger<LuceneAppService> logger,
     IServiceProvider serviceProvider,
-    IEnumerable<ILuceneFilterProvider> filterProviders)
+    IEnumerable<ILuceneFilterProvider> filterProviders,
+    ILuceneSearcherProvider searcherProvider)
     : ApplicationService, ILuceneService
 {
     private readonly LuceneOptions _options = options.Value;
+    private readonly ILuceneSearcherProvider _searcherProvider = searcherProvider;
 
     [Authorize(ZyknowLucenePermissions.Search.Default)]
     public virtual async Task<SearchResultDto> SearchAsync(string entityName, SearchQueryInput input)
@@ -50,8 +52,9 @@ public class LuceneAppService(
         logger.LogInformation(
             "Lucene search on index {Index} at path {Path}. Query={Query} Prefix={Prefix} Fuzzy={Fuzzy}",
             descriptor.IndexName, indexPath, input.Query, input.Prefix, input.Fuzzy);
-        using var dir = _options.DirectoryFactory(indexPath);
-        using var reader = DirectoryReader.Open(dir);
+
+        using var lease = await _searcherProvider.AcquireAsync(descriptor);
+        var reader = lease.Searcher.IndexReader;
 
         var fields = descriptor.Fields.Where(f => f.Searchable).Select(f => f.Name).Distinct().ToArray();
         var analyzer = _options.AnalyzerFactory();
@@ -129,7 +132,7 @@ public class LuceneAppService(
             }
         }
 
-        var searcher = new IndexSearcher(reader);
+        var searcher = lease.Searcher;
         var topN = input.SkipCount + input.MaxResultCount;
         var hits = searcher.Search(composed, topN);
         logger.LogInformation("Lucene search returned {Total} hits", hits.TotalHits);
@@ -171,16 +174,13 @@ public class LuceneAppService(
         await Task.Yield();
 
         var entityNames = input.Entities;
-
         if (entityNames == null || entityNames.Count == 0)
         {
             throw new BusinessException("Lucene:EmptyEntities");
         }
 
-        // 收集描述符与 reader
         var descriptors = new List<EntitySearchDescriptor>();
-        var readers = new List<IndexReader>();
-        var dirHandles = new List<Directory>();
+        var leases = new List<SearchLease>();
 
         try
         {
@@ -195,28 +195,23 @@ public class LuceneAppService(
                 }
 
                 var p = GetIndexPath(d.IndexName);
-
-                if (!System.IO.Directory.Exists(p) || System.IO.Directory.GetFiles(p).Length == 0)
+                if (!System.IO.Directory.Exists(p))
                 {
-                    logger.LogInformation("Lucene multi search skipped entity {Entity} with no index at {Path}", name,
-                        p);
+                    logger.LogInformation("Lucene multi search skipped entity {Entity} with no directory at {Path}", name, p);
                     continue;
                 }
 
-                var dir = _options.DirectoryFactory(p);
+                var lease = await _searcherProvider.AcquireAsync(d);
+                leases.Add(lease);
                 descriptors.Add(d);
-                dirHandles.Add(dir);
-                readers.Add(DirectoryReader.Open(dir));
             }
 
-            // 若所有实体均未配置，则直接返回空结果
             if (descriptors.Count == 0)
             {
                 logger.LogInformation("Lucene multi search: no configured entities found. Returning empty result.");
                 return new SearchResultDto(0, new List<SearchHitDto>(0));
             }
 
-            // 构建字段并集
             var fields = descriptors
                 .SelectMany(d => d.Fields.Where(f => f.Searchable).Select(f => f.Name))
                 .Distinct()
@@ -236,7 +231,6 @@ public class LuceneAppService(
             {
                 variants.Add($"{input.Query}*");
             }
-
             if (input.Fuzzy)
             {
                 variants.Add($"{input.Query}~{_options.LuceneQuery.FuzzyMaxEdits}");
@@ -263,39 +257,22 @@ public class LuceneAppService(
                             ex.Message);
                     }
                 }
-
                 finalQuery = bq;
             }
 
-            // 过滤器：每个实体独立生成并合并
-            var composed = new BooleanQuery { { finalQuery, Occur.MUST } };
-            foreach (var d in descriptors)
-            {
-                var ctx = new SearchFilterContext(d.IndexName, d, input);
-                foreach (var provider in filterProviders)
-                {
-                    var fq = await provider.BuildAsync(ctx);
-                    if (fq != null)
-                    {
-                        composed.Add(fq, Occur.MUST);
-                    }
-                }
-            }
-
-            // MultiReader 全局检索
-            var multi = new MultiReader(readers.ToArray(), true);
+            var readers = leases.Select(l => l.Searcher.IndexReader).ToArray();
+            // 注意：不要让 MultiReader 关闭子 reader（由 SearcherManager 管理）
+            using var multi = new MultiReader(readers, false);
             var searcher = new IndexSearcher(multi);
             var topN = input.SkipCount + input.MaxResultCount;
-            var hits = searcher.Search(composed, topN);
-            logger.LogInformation("Lucene multi search returned {Total} hits across {Count} indexes", hits.TotalHits,
-                readers.Count);
+            var hits = searcher.Search(finalQuery, topN);
+            logger.LogInformation("Lucene multi search returned {Total} hits across {Count} indexes", hits.TotalHits, readers.Length);
             var slice = hits.ScoreDocs.Skip(input.SkipCount).Take(input.MaxResultCount).ToList();
 
             var results = new List<SearchHitDto>(slice.Count);
             foreach (var sd in slice)
             {
                 var doc = searcher.Doc(sd.Doc);
-                // 尝试读取来源实体名（通过字段并集无法直接得知），此处放入 Payload 特殊键
                 var payload = new Dictionary<string, string>();
                 foreach (var d in descriptors)
                 {
@@ -310,18 +287,13 @@ public class LuceneAppService(
                 }
 
                 payload["__IndexName"] = ResolveDocIndexName(descriptors, doc);
+                var id = descriptors.Select(d => doc.Get(d.IdFieldName)).FirstOrDefault(s => !string.IsNullOrEmpty(s)) ?? string.Empty;
 
-                // id 字段并不统一，优先从各描述符的 id 字段中读取第一个存在的
-                var id = descriptors
-                    .Select(d => doc.Get(d.IdFieldName))
-                    .FirstOrDefault(s => !string.IsNullOrEmpty(s)) ?? string.Empty;
-
-                // 新增：按需构建高亮片段（对所有存储字段尝试高亮）
                 Dictionary<string, List<string>>? highlights = null;
                 if (input.Highlight)
                 {
                     var allStoreFields = descriptors.SelectMany(d => d.Fields.Where(x => x.Store));
-                    highlights = BuildHighlights(composed, analyzer, doc, allStoreFields);
+                    highlights = BuildHighlights(finalQuery, analyzer, doc, allStoreFields);
                 }
 
                 results.Add(new SearchHitDto
@@ -337,14 +309,9 @@ public class LuceneAppService(
         }
         finally
         {
-            foreach (var r in readers)
+            foreach (var l in leases)
             {
-                r.Dispose();
-            }
-
-            foreach (var dir in dirHandles)
-            {
-                dir.Dispose();
+                l.Dispose();
             }
         }
     }

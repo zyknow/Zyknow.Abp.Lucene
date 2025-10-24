@@ -38,6 +38,7 @@ public class ConcurrentIndexingTests
             });
         });
         services.AddSingleton<LuceneIndexManager>();
+        services.AddSingleton<ILuceneSearcherProvider, LuceneSearcherProvider>();
         services.AddSingleton<LuceneAppService>();
         return services.BuildServiceProvider();
     }

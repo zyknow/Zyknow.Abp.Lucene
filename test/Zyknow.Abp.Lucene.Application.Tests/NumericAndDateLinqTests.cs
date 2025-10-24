@@ -33,6 +33,7 @@ public class NumericAndDateLinqTests
             });
         });
         services.AddSingleton<LuceneIndexManager>();
+        services.AddSingleton<ILuceneSearcherProvider, LuceneSearcherProvider>();
         services.AddSingleton<LuceneAppService>();
         services.AddSingleton<ILuceneFilterProvider>(new CountRangeProvider(10, 100));
         services.AddSingleton<ICurrentTenant>(new FakeCurrentTenant { Id = null });
@@ -73,6 +74,7 @@ public class NumericAndDateLinqTests
             });
         });
         services.AddSingleton<LuceneIndexManager>();
+        services.AddSingleton<ILuceneSearcherProvider, LuceneSearcherProvider>();
         services.AddSingleton<LuceneAppService>();
         services.AddSingleton<ILuceneFilterProvider>(new DateRangeProvider(DateTime.UtcNow.AddDays(-2),
             DateTime.UtcNow.AddDays(2)));

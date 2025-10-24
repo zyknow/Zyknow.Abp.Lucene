@@ -20,7 +20,9 @@ public class ZyknowLuceneApplicationModule : AbpModule
     {
         context.Services.AddTransient<ILuceneService, LuceneAppService>();
         context.Services.AddTransient(typeof(GenericIndexingHandler<>));
-    // LuceneIndexManager 已在领域模块注册
+        // LuceneIndexManager 已在领域模块注册
+        // 新增：注册搜索器缓存服务
+        context.Services.AddSingleton<ILuceneSearcherProvider, LuceneSearcherProvider>();
     }
 
     public override void OnApplicationInitialization(ApplicationInitializationContext context)

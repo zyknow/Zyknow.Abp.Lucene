@@ -127,6 +127,7 @@ public class HighlightTests
             });
         });
         services.AddSingleton<LuceneIndexManager>();
+        services.AddSingleton<ILuceneSearcherProvider, LuceneSearcherProvider>();
         services.AddSingleton<LuceneAppService>();
 
         var sp = services.BuildServiceProvider();
@@ -138,4 +139,3 @@ public class HighlightTests
     private record Book(string Id, string Title, string Author, string Code);
     private record Item(string Id, string Name, string Code);
 }
-

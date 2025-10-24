@@ -121,5 +121,46 @@ public class DeleteByFieldTests
         Assert.Equal(1, after.TotalCount);
     }
 
+    [Fact]
+    public async Task Delete_By_Field_Should_Reduce_Count()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<ICurrentTenant>(new FakeCurrentTenant { Id = null });
+        services.Configure<LuceneOptions>(opt =>
+        {
+            opt.PerTenantIndex = false;
+            opt.IndexRootPath = Path.Combine(Path.GetTempPath(), "lucene-index-test-del");
+            opt.AnalyzerFactory = AnalyzerFactories.IcuGeneral;
+            opt.ConfigureLucene(model =>
+            {
+                model.Entity<Book>(e =>
+                {
+                    e.Field(x => x.Title, f => f.Store());
+                    e.Field(x => x.Code, f => f.Keyword());
+                });
+            });
+        });
+        services.AddSingleton<LuceneIndexManager>();
+        services.AddSingleton<ILuceneSearcherProvider, LuceneSearcherProvider>();
+        services.AddSingleton<LuceneAppService>();
+
+        var sp = services.BuildServiceProvider();
+        var indexer = sp.GetRequiredService<LuceneIndexManager>();
+        var app = sp.GetRequiredService<LuceneAppService>();
+
+        await indexer.RebuildAsync(typeof(Book));
+        var docs = Enumerable.Range(0, 10).Select(i => new Book(i.ToString(), $"T-{i}", $"C{i:0000}")).ToList();
+        await indexer.IndexRangeAsync(docs, replace: false);
+
+        var before = await app.GetIndexDocumentCountAsync("Book");
+        Assert.Equal(10, before);
+
+        await indexer.DeleteByFieldAsync<Book>(nameof(Book.Code), docs.Take(3).Select(d => d.Code));
+
+        var after = await app.GetIndexDocumentCountAsync("Book");
+        Assert.Equal(7, after);
+    }
+
     private record Book(string Id, string Title, string Code);
 }

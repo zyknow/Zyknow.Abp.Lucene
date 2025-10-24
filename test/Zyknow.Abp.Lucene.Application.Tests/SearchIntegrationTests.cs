@@ -38,6 +38,8 @@ public class SearchIntegrationTests
             });
         });
         services.AddSingleton<LuceneIndexManager>();
+        // 新增：注册 SearcherProvider 以供 LuceneAppService 使用
+        services.AddSingleton<ILuceneSearcherProvider, LuceneSearcherProvider>();
         services.AddSingleton<LuceneAppService>();
 
         var sp = services.BuildServiceProvider();

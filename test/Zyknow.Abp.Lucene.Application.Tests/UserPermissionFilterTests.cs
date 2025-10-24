@@ -45,6 +45,7 @@ public class UserPermissionFilterTests
             });
         });
         services.AddSingleton<LuceneIndexManager>();
+        services.AddSingleton<ILuceneSearcherProvider, LuceneSearcherProvider>();
         services.AddSingleton<LuceneAppService>();
         services.AddSingleton<ICurrentTenant>(new FakeCurrentTenant { Id = null });
         services.AddSingleton<ICurrentUser>(new FakeCurrentUser(userId));

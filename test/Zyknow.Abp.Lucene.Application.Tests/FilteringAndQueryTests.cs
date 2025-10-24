@@ -38,6 +38,7 @@ public class FilteringAndQueryTests
             });
         });
         services.AddSingleton<LuceneIndexManager>();
+        services.AddSingleton<ILuceneSearcherProvider, LuceneSearcherProvider>();
         services.AddSingleton<LuceneAppService>();
         services.AddSingleton<ICurrentTenant>(new FakeCurrentTenant { Id = null });
         services.AddLogging();
@@ -94,6 +95,7 @@ public class FilteringAndQueryTests
             });
         });
         services.AddSingleton<LuceneIndexManager>();
+        services.AddSingleton<ILuceneSearcherProvider, LuceneSearcherProvider>();
         services.AddSingleton<LuceneAppService>();
         services.AddSingleton<ILuceneFilterProvider>(new RestrictCodeProvider("B001"));
         services.AddSingleton<ICurrentTenant>(new FakeCurrentTenant { Id = null });
@@ -134,6 +136,7 @@ public class FilteringAndQueryTests
             });
         });
         services.AddSingleton<LuceneIndexManager>();
+        services.AddSingleton<ILuceneSearcherProvider, LuceneSearcherProvider>();
         services.AddSingleton<LuceneAppService>();
         services.AddSingleton<ILuceneFilterProvider>(new CodesInProvider(["B001", "B002"]));
         services.AddSingleton<ICurrentTenant>(new FakeCurrentTenant { Id = null });
@@ -174,6 +177,7 @@ public class FilteringAndQueryTests
             });
         });
         services.AddSingleton<LuceneIndexManager>();
+        services.AddSingleton<ILuceneSearcherProvider, LuceneSearcherProvider>();
         services.AddSingleton<LuceneAppService>();
         services.AddSingleton<ILuceneFilterProvider>(new ReadCountRangeProvider("00000010", "00000050"));
         services.AddSingleton<ICurrentTenant>(new FakeCurrentTenant { Id = null });

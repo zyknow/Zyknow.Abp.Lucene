@@ -1,6 +1,8 @@
 name: Publish
 
 on:
+  push:
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       version_suffix:
@@ -34,7 +36,67 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  decide:
+    name: Decide publish
+    runs-on: windows-latest
+    outputs:
+      proceed: ${{ steps.decision.outputs.proceed }}
+      reason: ${{ steps.decision.outputs.reason }}
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Decide by version change or commit message
+        id: decision
+        shell: pwsh
+        run: |
+          $eventName = '${{ github.event_name }}'
+          if ($eventName -eq 'workflow_dispatch') {
+            "proceed=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "reason=manual dispatch" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            exit 0
+          }
+
+          git config --global --add safe.directory $PWD
+          $before = '${{ github.event.before }}'
+          $after = '${{ github.sha }}'
+
+          function Get-VersionFromCommit([string]$sha) {
+            try {
+              $content = git show "$sha:common.props" 2>$null
+              if ([string]::IsNullOrWhiteSpace($content)) { return '' }
+              [xml]$xml = $content
+              return $xml.Project.PropertyGroup.Version
+            } catch { return '' }
+          }
+
+          $beforeVersion = Get-VersionFromCommit $before
+          $afterVersion = Get-VersionFromCommit $after
+          $versionChanged = $false
+          if (-not [string]::IsNullOrWhiteSpace($afterVersion) -and $beforeVersion -ne $afterVersion) { $versionChanged = $true }
+
+          $log = git log --format=%B $before..$after 2>$null
+          $forceByMsg = $false
+          if ($log) {
+            if ($log -match '(?is)\[(release|publish)\]|(^|\s)(release|publish)(:|\s|$)') { $forceByMsg = $true }
+          }
+
+          $proceed = $versionChanged -or $forceByMsg
+          "proceed=$proceed" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          $reason = if ($versionChanged) { "Version changed $beforeVersion -> $afterVersion" } elseif ($forceByMsg) { "Commit message override" } else { "No version change and no override" }
+          "reason=$reason" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Echo decision
+        shell: pwsh 
+        run: |
+          Write-Host "Proceed=${{ steps.decision.outputs.proceed }} Reason=${{ steps.decision.outputs.reason }}"
+
   publish:
+    needs: decide
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.decide.outputs.proceed == 'True' || needs.decide.outputs.proceed == 'true' }}
     runs-on: windows-latest
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: true

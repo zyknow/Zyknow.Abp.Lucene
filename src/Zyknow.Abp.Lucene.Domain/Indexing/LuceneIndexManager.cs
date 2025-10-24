@@ -7,12 +7,15 @@ using Volo.Abp;
 using Volo.Abp.MultiTenancy;
 using Zyknow.Abp.Lucene.Descriptors;
 using Zyknow.Abp.Lucene.Options;
+using System.Collections.Concurrent;
 
 namespace Zyknow.Abp.Lucene.Indexing;
 
 public class LuceneIndexManager(IOptions<LuceneOptions> options, ICurrentTenant currentTenant, ILogger<LuceneIndexManager> logger)
 {
     private readonly LuceneOptions _options = options.Value;
+    // 新增：按索引路径维护写入锁，串行化同一索引的写操作，避免 IndexWriter 并发冲突
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> _indexLocks = new(StringComparer.OrdinalIgnoreCase);
 
     public Task IndexAsync<T>(T entity)
     {
@@ -179,13 +182,24 @@ public class LuceneIndexManager(IOptions<LuceneOptions> options, ICurrentTenant 
     {
         var indexPath = GetIndexPath(descriptor.IndexName);
         logger.LogDebug("Open IndexWriter: {Index} path={Path}", descriptor.IndexName, indexPath);
-        using var dir = _options.DirectoryFactory(indexPath);
-        var analyzer = _options.AnalyzerFactory();
-        var config = new IndexWriterConfig(LuceneVersion.LUCENE_48, analyzer);
-        using var writer = new IndexWriter(dir, config);
-        action(writer);
-        writer.Commit();
-        logger.LogInformation("Committed changes to index: {Index}", descriptor.IndexName);
+
+        // 串行化同一索引的写入，避免并发 IndexWriter 导致的 write.lock 争用
+        var gate = _indexLocks.GetOrAdd(indexPath, _ => new SemaphoreSlim(1, 1));
+        gate.Wait();
+        try
+        {
+            using var dir = _options.DirectoryFactory(indexPath);
+            var analyzer = _options.AnalyzerFactory();
+            var config = new IndexWriterConfig(LuceneVersion.LUCENE_48, analyzer);
+            using var writer = new IndexWriter(dir, config);
+            action(writer);
+            writer.Commit();
+            logger.LogInformation("Committed changes to index: {Index}", descriptor.IndexName);
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     public virtual string GetIndexPath(string indexName)

@@ -21,7 +21,6 @@ using Zyknow.Abp.Lucene.Permissions;
 using Directory = Lucene.Net.Store.Directory;
 using Lucene.Net.Search.Highlight;
 using Lucene.Net.Analysis;
-using System.IO;
 
 namespace Zyknow.Abp.Lucene.Services;
 
@@ -431,9 +430,8 @@ public class LuceneAppService(
                     [repository, batchSize, true, CancellationToken.None])!;
                 logger.LogInformation("Lucene rebuild+index: completed for {Entity}, processed={Processed}",
                     entityType.FullName, processed);
-                // 若读取索引计数仍为0，但处理>0，则返回处理数以避免误判
-                var indexed = await GetIndexDocumentCountInternalAsync(descriptor);
-                return indexed > 0 ? indexed : processed;
+                // 直接返回处理条数，避免新索引尚未可见导致的 0 计数
+                return processed;
             }
             catch (TargetInvocationException tie)
             {
@@ -473,11 +471,19 @@ public class LuceneAppService(
         }
 
         var indexPath = GetIndexPath(descriptor.IndexName);
+        // 若目录或索引文件不存在，直接返回 0，避免打开 Reader 抛错
+        if (!System.IO.Directory.Exists(indexPath) || System.IO.Directory.GetFiles(indexPath).Length == 0)
+        {
+            logger.LogInformation("Lucene index {Index} at {Path} has 0 docs (directory empty or not exists)", descriptor.IndexName, indexPath);
+            return 0;
+        }
+
         using var dir = _options.DirectoryFactory(indexPath);
         using var reader = DirectoryReader.Open(dir);
-        logger.LogInformation("Lucene index {Index} at {Path} has {Count} docs", descriptor.IndexName, indexPath,
-            reader.MaxDoc);
-        return reader.MaxDoc;
+        // 修复：使用 NumDocs（排除已删除文档）而非 MaxDoc
+        var live = reader.NumDocs;
+        logger.LogInformation("Lucene index {Index} at {Path} has {Count} live docs", descriptor.IndexName, indexPath, live);
+        return live;
     }
 
     private static string ResolveDocIndexName(IEnumerable<EntitySearchDescriptor> descriptors, Document doc)
@@ -559,10 +565,19 @@ public class LuceneAppService(
     {
         await Task.Yield();
         var indexPath = GetIndexPath(descriptor.IndexName);
+        // 若目录或索引文件不存在，直接返回 0
+        if (!System.IO.Directory.Exists(indexPath) || System.IO.Directory.GetFiles(indexPath).Length == 0)
+        {
+            logger.LogInformation("Lucene index {Index} at {Path} has 0 docs (directory empty or not exists)", descriptor.IndexName, indexPath);
+            return 0;
+        }
+
         using var dir = _options.DirectoryFactory(indexPath);
         using var reader = DirectoryReader.Open(dir);
-        logger.LogInformation("Lucene index {Index} at {Path} has {Count} docs", descriptor.IndexName, indexPath,
-            reader.MaxDoc);
-        return reader.MaxDoc;
+        // 修复：使用 NumDocs（排除已删除文档）
+        var live = reader.NumDocs;
+        logger.LogInformation("Lucene index {Index} at {Path} has {Count} live docs", descriptor.IndexName, indexPath,
+            live);
+        return live;
     }
 }

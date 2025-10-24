@@ -68,14 +68,13 @@ public class GenericIndexingHandler<T>(
             return Task.CompletedTask;
         }
 
+        // 若此时实体 Id 尚未生成（例如 Guid.Empty 或空），为收集器使用一个临时唯一键，避免同一 UoW 内覆盖。
         var id = GetIdString(entity);
-        if (id != null)
-        {
-            collector.Upsert(entity, id);
-            logger.LogDebug("Queued upsert: {EntityType} #{Id}", typeof(T).Name, id);
-            RegisterOnce();
-        }
+        var key = !string.IsNullOrWhiteSpace(id) ? id : $"__tmp__{Guid.NewGuid():N}";
 
+        collector.Upsert(entity, key);
+        logger.LogDebug("Queued upsert: {EntityType} key={Key}", typeof(T).Name, key);
+        RegisterOnce();
         return Task.CompletedTask;
     }
 
@@ -115,11 +114,23 @@ public class GenericIndexingHandler<T>(
 
         if (entity is IEntity<Guid> g)
         {
-            return g.Id.ToString();
+            return g.Id == Guid.Empty ? null : g.Id.ToString();
         }
 
         var prop = entity.GetType().GetProperty("Id");
         var val = prop?.GetValue(entity);
-        return val?.ToString();
+        var s = val?.ToString();
+        if (string.IsNullOrWhiteSpace(s))
+        {
+            return null;
+        }
+
+        // 若是 Guid 字符串且为空 Guid，也视为未就绪
+        if (Guid.TryParse(s, out var gv) && gv == Guid.Empty)
+        {
+            return null;
+        }
+
+        return s;
     }
 }

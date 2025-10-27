@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Zyknow.Abp.Lucene.EntityFrameworkCore\Zyknow.Abp.Lucene.EntityFrameworkCore.csproj" />
     <ProjectReference Include="..\Simple.Domain\Simple.Domain.csproj" />
   </ItemGroup>
 

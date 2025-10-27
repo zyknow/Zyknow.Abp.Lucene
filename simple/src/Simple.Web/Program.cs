@@ -28,7 +28,7 @@ public class Program
                 {
                     loggerConfiguration
                     #if DEBUG
-                        .MinimumLevel.Debug()
+                        .MinimumLevel.Warning()
                     #else
                         .MinimumLevel.Information()
                     #endif

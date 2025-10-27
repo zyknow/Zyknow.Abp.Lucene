@@ -1,5 +1,4 @@
-﻿using Volo.Abp.GlobalFeatures;
-using Volo.Abp.Threading;
+﻿using Volo.Abp.Threading;
 
 namespace Simple;
 

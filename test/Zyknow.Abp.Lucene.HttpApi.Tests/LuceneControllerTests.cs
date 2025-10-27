@@ -1,14 +1,8 @@
-using System;
-using System.Net.Http;
-using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
-using Xunit;
 using Zyknow.Abp.Lucene.Analyzers;
 using Zyknow.Abp.Lucene.Dtos;
 using Zyknow.Abp.Lucene.Options;

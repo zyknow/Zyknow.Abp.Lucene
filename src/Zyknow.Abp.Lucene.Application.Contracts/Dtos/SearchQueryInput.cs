@@ -1,5 +1,4 @@
 using Volo.Abp.Application.Dtos;
-using Zyknow.Abp.Lucene.Options;
 
 namespace Zyknow.Abp.Lucene.Dtos;
 

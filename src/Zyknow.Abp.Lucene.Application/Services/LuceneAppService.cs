@@ -18,7 +18,6 @@ using Zyknow.Abp.Lucene.Dtos;
 using Zyknow.Abp.Lucene.Filtering;
 using Zyknow.Abp.Lucene.Options;
 using Zyknow.Abp.Lucene.Permissions;
-using Directory = Lucene.Net.Store.Directory;
 using Lucene.Net.Search.Highlight;
 using Lucene.Net.Analysis;
 

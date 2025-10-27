@@ -1,9 +1,5 @@
-using System.Collections.Generic;
-using System.Threading.Tasks;
-using Lucene.Net.Util;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using Xunit;
 using Zyknow.Abp.Lucene.Options;
 
 namespace Zyknow.Abp.Lucene.Domain.Tests;

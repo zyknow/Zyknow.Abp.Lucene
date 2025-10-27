@@ -1,11 +1,6 @@
-using System;
-using System.Collections.Generic;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using Xunit;
-using Zyknow.Abp.Lucene.Fluent;
 using Zyknow.Abp.Lucene.Options;
-using Zyknow.Abp.Lucene.Descriptors;
 
 namespace Zyknow.Abp.Lucene.Domain.Tests;
 

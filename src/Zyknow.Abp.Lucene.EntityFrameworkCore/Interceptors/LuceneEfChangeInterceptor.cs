@@ -57,7 +57,7 @@ public class LuceneEfChangeInterceptor : SaveChangesInterceptor
 
         // 读取配置开关
         var options = db.GetService<IOptions<LuceneOptions>>().Value;
-        if (!options.EnableEfCoreChangeInterception)
+        if (!options.EnableAutoIndexingEvents)
         {
             return;
         }

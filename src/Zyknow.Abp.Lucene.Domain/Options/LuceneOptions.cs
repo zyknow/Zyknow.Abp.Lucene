@@ -76,14 +76,6 @@ public class LuceneOptions
     public bool EnableAutoIndexingEvents { get; set; } = true;
 
     /// <summary>
-    /// 是否启用 EF Core SaveChanges 变更拦截并在 UoW 提交后更新索引。
-    /// </summary>
-    /// <remarks>
-    /// 默认关闭（false）。开启后，推荐将 <see cref="EnableAutoIndexingEvents"/> 设为 false，避免重复收集。
-    /// </remarks>
-    public bool EnableEfCoreChangeInterception { get; set; } = true;
-
-    /// <summary>
     /// 使用流式 API 注册实体的索引描述符。
     /// </summary>
     /// <param name="configure">对 <see cref="Fluent.LuceneModelBuilder"/> 的配置委托。</param>

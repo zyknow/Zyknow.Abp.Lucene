@@ -1,4 +1,9 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Volo.Abp.AuditLogging.EntityFrameworkCore;
 using Simple.Books;
 using Volo.Abp.BackgroundJobs.EntityFrameworkCore;
@@ -15,6 +20,7 @@ using Volo.Abp.SettingManagement.EntityFrameworkCore;
 using Volo.Abp.OpenIddict.EntityFrameworkCore;
 using Volo.Abp.TenantManagement;
 using Volo.Abp.TenantManagement.EntityFrameworkCore;
+using Zyknow.Abp.Lucene;
 
 namespace Simple.EntityFrameworkCore;
 
@@ -22,11 +28,10 @@ namespace Simple.EntityFrameworkCore;
 [ReplaceDbContext(typeof(ITenantManagementDbContext))]
 [ConnectionStringName("Default")]
 public class SimpleDbContext :
-    AbpDbContext<SimpleDbContext>,
+    LuceneAbpDbContext<SimpleDbContext>,
     ITenantManagementDbContext,
     IIdentityDbContext
 {
-    /* Add DbSet properties for your Aggregate Roots / Entities here. */
 
     public DbSet<Book> Books { get; set; }
 
@@ -62,7 +67,12 @@ public class SimpleDbContext :
     public SimpleDbContext(DbContextOptions<SimpleDbContext> options)
         : base(options)
     {
+        // 设计时工厂路径会使用此构造函数
+    }
 
+    public SimpleDbContext(DbContextOptions<SimpleDbContext> options, IEnumerable<IInterceptor> interceptors)
+        : base(options)
+    {
     }
 
     protected override void OnModelCreating(ModelBuilder builder)

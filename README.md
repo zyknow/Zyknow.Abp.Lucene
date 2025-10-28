@@ -40,13 +40,14 @@ Notes:
 
 The module subscribes to ABP local entity events internally and only listens to entity types registered in `ConfigureLucene`, achieving automatic index maintenance.
 
-- Configuration example
+- Configuration example (e.g., in your HttpApi or Web module):
 
 ```csharp
-Configure<ZyknowLuceneOptions>(opt =>
+// using Zyknow.Abp.Lucene.Options;
+Configure<LuceneOptions>(opt =>
 {
     opt.IndexRootPath = Path.Combine(AppContext.BaseDirectory, "lucene-index");
-    opt.PerTenantIndex = true;
+    opt.PerTenantIndex = true; // default true
     opt.AnalyzerFactory = AnalyzerFactories.IcuGeneral;
     opt.ConfigureLucene(model =>
     {
@@ -59,6 +60,14 @@ Configure<ZyknowLuceneOptions>(opt =>
     });
 });
 ```
+
+### HTTP API
+
+- GET `api/lucene/search/{entity}`
+- GET `api/lucene/search-many`
+- POST `api/lucene/rebuild/{entity}`
+- POST `api/lucene/rebuild-and-index/{entity}?batchSize=1000`
+- GET `api/lucene/count/{entity}`
 
 ## Search API Response
 
@@ -139,7 +148,7 @@ model.Entity<Book>(e =>
 You can plug custom filters into the search pipeline via `ILuceneFilterProvider` in the Application layer:
 
 - Interface: `Task<Query?> BuildAsync(SearchFilterContext ctx)`
-- Context: `{ string EntityName, EntitySearchDesc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       riptor Descriptor, SearchQueryInput Input }`
+- Context: `{ string EntityName, EntitySearchDescriptor Descriptor, SearchQueryInput Input }`
 - Composition: the returned `Query` is added with `Occur.MUST` to the final query
 
 A lightweight LINQ → Lucene mapping helper is provided to write filters with simple LINQ expressions and convert them into Lucene queries:
@@ -151,102 +160,58 @@ A lightweight LINQ → Lucene mapping helper is provided to write filters with s
 - Wildcard contains: `x => x.Field.Contains("foo")` → `WildcardQuery("*foo*")`
 - Boolean composition: `AndAlso` → `MUST`, `OrElse` → `SHOULD`
 
-Notes:
-
-- Fields used in filtering must be indexed (prefer `Keyword()` for exact matching).
-- Field name resolution uses `Descriptor.Fields`; expression member names must match descriptor field names.
-- Performance: prefer prefix/keyword filters; use broad wildcards with caution.
-
-#### Example: filter by LibraryId
+#### Example: filter by LibraryId list
 
 ```csharp
-public class MediumLuceneFilter : ILuceneFilterProvider, IScopedDependency
+using System.Linq.Expressions;
+using Lucene.Net.Search;
+using Volo.Abp.DependencyInjection;
+using Zyknow.Abp.Lucene.Filtering;
+
+public class LibraryFilterProvider : ILuceneFilterProvider, IScopedDependency
 {
     public Task<Query?> BuildAsync(SearchFilterContext ctx)
     {
-        var ids = new [] { guid1, guid2 };
-        Expression<Func<MediumProj, bool>> expr = x => ids.Contains(x.LibraryId);
-        return Task.FromResult(LinqLucene.Where(ctx.Descriptor, expr));
+        // Assume you get the list of library ids from your request or dependency
+        var libraryIds = new [] { Guid.Parse("11111111-1111-1111-1111-111111111111"), Guid.Parse("22222222-2222-2222-2222-222222222222") };
+
+        Expression<Func<Project, bool>> expr = x => libraryIds.Contains(x.LibraryId);
+        var query = LinqLucene.Where(ctx.Descriptor, expr);
+        return Task.FromResult<Query?>(query);
     }
-    private sealed class MediumProj { public Guid LibraryId { get; set; } }
+
+    private sealed class Project
+    {
+        public Guid LibraryId { get; set; }
+    }
 }
 ```
+
+Tip: If `ctx.Expression` is already provided by the caller and this provider returns `null`, the pipeline will try to convert that expression to a Lucene `Query` and merge it with `MUST`.
 
 #### Range queries (TermRangeQuery)
 
-Term-based range comparisons are lexicographical. Normalize numbers/dates at indexing time to ensure correct ordering.
-
-- Numbers: use zero-padded fixed-width strings (e.g., 8 digits)
-
-```csharp
-// Index as zero-padded strings like "00001234"
-Expression<Func<ItemProj, bool>> expr = x => x.ReadCount >= "00000010" && x.ReadCount < "00000100";
-var q = LinqLucene.Where(ctx.Descriptor, expr);
-```
-
-- Dates: use a sortable format like `yyyyMMddHHmmss`
-
-```csharp
-// Index CreatedAt as "20250101000000" style strings
-Expression<Func<ItemProj, bool>> expr = x => x.CreatedAt >= "20250101000000" && x.CreatedAt < "20260101000000";
-var q = LinqLucene.Where(ctx.Descriptor, expr);
-```
-
-Notes:
-
-- Prefer `Keyword()/LowerCaseKeyword()` for exact/normalized fields.
-- For true numeric/date ranges, consider extending to Numeric/Points queries.
-
-#### Case-insensitive keyword (culture)
-
-Use `LowerCaseKeyword()` or `LowerCaseKeyword(CultureInfo)` to normalize values at index/write time and in query mapping：
-
-```csharp
-model.Entity<Tag>(e =>
-{
-    e.Field(x => x.Name, f => f.LowerCaseKeyword(new System.Globalization.CultureInfo("tr-TR")));
-});
-```
-
-This applies lowercasing during indexing and in LINQ → Lucene mapping (Term/Prefix/Wildcard/IN) to ensure consistent matching.
+Term-based range comparisons are lexicographical. Normalize numbers/dates at indexing time (zero-pad, `yyyyMMddHHmmss`).
 
 ### Concurrency & UnitOfWork (important)
 
-When you run multiple database writes in parallel within the same HTTP request, ABP's request-scoped UnitOfWork propagates via AsyncLocal into child tasks. Calling `Begin()` inside these tasks (without `requiresNew`) may reuse the same UoW and cause:
-- Exception: This unit of work has already been initialized.
-- Batching side-effects across tasks, resulting in index count jitters.
+When you run multiple writes in parallel within the same HTTP request, not using `requiresNew` in child tasks may reuse the same UoW and cause errors.
 
-To ensure stable concurrency and index consistency, pick either approach:
+Solution (choose one):
+- Independent transaction per task (recommended): `requiresNew: true`
+- Suppress execution context flow and use regular `Begin`
 
-1) Independent transaction per task (recommended)
-
-```csharp
-// Start an independent UoW for each task (requiresNew: true)
-using var uow = uowManager.Begin(new AbpUnitOfWorkOptions { IsTransactional = true }, requiresNew: true);
-// write...
-await uow.CompleteAsync();
-```
-
-2) Suppress ExecutionContext flow + regular Begin
+Parallel insert example for Book (no rebuild): see below.
 
 ```csharp
-var afc = ExecutionContext.SuppressFlow();
-try
+var tasks = Enumerable.Range(0, threads).Select(async t =>
 {
-    await Task.Run(async () =>
-    {
-        using (CurrentTenant.Change(tenantId, tenantName))
-        using (var uow = uowManager.Begin(new AbpUnitOfWorkOptions { IsTransactional = true }))
-        {
-            // write...
-            await uow.CompleteAsync();
-        }
-    });
-}
-finally
-{
-    afc.Undo();
-}
+    using var uow = uowManager.Begin(new AbpUnitOfWorkOptions { IsTransactional = true }, requiresNew: true);
+    for (var i = 0; i < perThread; i++)
+        await bookRepo.InsertAsync(new Book(GuidGenerator.Create(), $"Title-{t}-{i}", $"Author-{t}"), autoSave: true);
+    await uow.CompleteAsync();
+});
+await Task.WhenAll(tasks);
 ```
 
 Notes:

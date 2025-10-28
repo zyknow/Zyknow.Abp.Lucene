@@ -38,26 +38,36 @@ public class MyDbContext : LuceneAbpDbContext<MyDbContext>
 
 ## 快速上手
 
-内部已订阅 ABP 本地实体事件，只会监听ConfigureLucene中注册的实体类型，实现自动索引维护。
+模块内部订阅了 ABP 本地实体事件，仅监听在 `ConfigureLucene` 中注册的实体类型，从而实现自动索引维护。
 
-* 配置如下
-    ```csharp
-    Configure<ZyknowLuceneOptions>(opt =>
+- 配置示例（通常放在 HttpApi/Web 模块）：
+
+```csharp
+// using Zyknow.Abp.Lucene.Options;
+Configure<LuceneOptions>(opt =>
+{
+    opt.IndexRootPath = Path.Combine(AppContext.BaseDirectory, "lucene-index");
+    opt.PerTenantIndex = true; // 默认 true
+    opt.AnalyzerFactory = AnalyzerFactories.IcuGeneral;
+    opt.ConfigureLucene(model =>
     {
-        opt.IndexRootPath = Path.Combine(AppContext.BaseDirectory, "lucene-index");
-        opt.PerTenantIndex = true;
-        opt.AnalyzerFactory = AnalyzerFactories.IcuGeneral;
-        opt.ConfigureLucene(model =>
+        model.Entity<Book>(e =>
         {
-            model.Entity<Book>(e =>
-            {
-                e.Field(x => x.Title, f => f.Store());
-                e.Field(x => x.Author, f => f.Store());
-                e.Field(x => x.Code, f => f.Keyword());
-            });
+            e.Field(x => x.Title, f => f.Store());
+            e.Field(x => x.Author, f => f.Store());
+            e.Field(x => x.Code, f => f.Keyword());
         });
     });
-    ```
+});
+```
+
+### HTTP API
+
+- GET `api/lucene/search/{entity}`
+- GET `api/lucene/search-many`
+- POST `api/lucene/rebuild/{entity}`
+- POST `api/lucene/rebuild-and-index/{entity}?batchSize=1000`
+- GET `api/lucene/count/{entity}`
 
 ## 搜索接口返回值
 
@@ -101,31 +111,23 @@ public class MyDbContext : LuceneAbpDbContext<MyDbContext>
 
   - 作用：声明该字段用于自动补全的提示参数（NGram/EdgeNGram）。
   - 默认：不设置。
-  - 说明：目前作为描述符层面的提示参数；要生效需配合自定义分词器/索引策略（例如使用 NGram 分词的 `AnalyzerFactory`）。
+  - 说明：目前作为描述符层面的提示参数；要生效需配合兼容分词器/索引策略（如使用 NGram 的 `AnalyzerFactory`）。
 
 - `StoreTermVectors(bool positions = true, bool offsets = true)`
 
-  - 作用：为字段存储词条向量信息（positions/offsets），常用于生成高亮等高级功能。
+  - 作用：存储词条向量信息（positions/offsets），常用于高亮等高级功能。
   - 默认：不设置。
-  - 说明：目前为配置提示；如需启用高亮/片段生成，需在检索流程中结合 `TermVector` 使用或扩展索引写入类型。
 
 - `Depends(Expression<Func<object>> member)`
-  - 作用：为 `ValueField`（派生字段）声明其依赖的实体属性列，便于同步器只加载必要列并计算派生文本。
-  - 默认：不设置。
-  - 影响：同步器会优先使用“自动投影”仅加载 `Depends` 声明的列；未声明或存在不可投影委托时，回退为“完整实体加载”，并记录 Info 级日志。
+  - 作用：为 `ValueField` 声明依赖的实体属性列，使同步器仅加载必要列并计算派生文本。
 
 #### 配置示例
 
 ```csharp
 model.Entity<Book>(e =>
 {
-    // 属性字段：参与分词并存储原始值
     e.Field(x => x.Title, f => f.Store());
-
-    // 关键字段：不分词、精确匹配、重命名
     e.Field(x => x.Code, f => f.Keyword().Name("BookCode"));
-
-    // 派生字段：声明依赖以启用仅加载必要列的自动投影
     e.ValueField(x => $"{x.Author} - {x.Title}", f =>
         f.Name("AuthorTitle").Store()
          .Depends(() => x.Author)
@@ -135,98 +137,61 @@ model.Entity<Book>(e =>
 
 ### 过滤扩展（FilterProvider）与 LINQ 映射
 
-你可以在应用层通过 `ILuceneFilterProvider` 将自定义过滤接入搜索管线：
-
 - 接口：`Task<Query?> BuildAsync(SearchFilterContext ctx)`
 - 上下文：`{ string EntityName, EntitySearchDescriptor Descriptor, SearchQueryInput Input }`
-- 组合方式：返回的过滤 `Query` 以 `Occur.MUST` 合并到最终查询
+- 返回的 `Query` 以 `Occur.MUST` 合并到最终查询
 
-提供了一个轻量的 LINQ → Lucene 映射辅助，支持用简单 LINQ 写过滤表达式并转换为 Lucene 查询：
+LINQ → Lucene 映射支持：等值、IN、StartsWith（前缀）、EndsWith/Contains（通配）、AndAlso/OrElse 组合。
 
-- 等值：`x => x.Field == value` → `TermQuery`
-- IN：`values.Contains(x.Field)` → 多个 `TermQuery`，`BooleanQuery SHOULD + MinimumNumberShouldMatch=1`
-- 前缀：`x => x.Field.StartsWith("ab")` → `PrefixQuery`
-- 后缀通配：`x => x.Field.EndsWith(".jpg")` → `WildcardQuery("*.jpg")`
-- 包含通配：`x => x.Field.Contains("foo")` → `WildcardQuery("*foo*")`
-- 组合：`AndAlso` → `MUST`，`OrElse` → `SHOULD`
-
-注意：
-
-- 参与过滤的字段必须写入索引（精确匹配推荐 `Keyword()`）。
-- 字段名解析来自 `Descriptor.Fields`；表达式中的成员名需与描述符字段名一致。
-- 性能建议：优先使用前缀/关键字过滤，谨慎使用大范围通配符。
-
-#### 示例：按 LibraryId 过滤
+#### 示例：按 LibraryId 列表过滤
 
 ```csharp
-public class MediumLuceneFilter : ILuceneFilterProvider, IScopedDependency
+using System.Linq.Expressions;
+using Lucene.Net.Search;
+using Volo.Abp.DependencyInjection;
+using Zyknow.Abp.Lucene.Filtering;
+
+public class LibraryFilterProvider : ILuceneFilterProvider, IScopedDependency
 {
     public Task<Query?> BuildAsync(SearchFilterContext ctx)
     {
-        var ids = new [] { guid1, guid2 };
-        Expression<Func<MediumProj, bool>> expr = x => ids.Contains(x.LibraryId);
-        return Task.FromResult(LinqLucene.Where(ctx.Descriptor, expr));
+        // 假设从调用方注入或上下文获取要过滤的 LibraryId 集合
+        var libraryIds = new [] { Guid.Parse("11111111-1111-1111-1111-111111111111"), Guid.Parse("22222222-2222-2222-2222-222222222222") };
+
+        Expression<Func<Project, bool>> expr = x => libraryIds.Contains(x.LibraryId);
+        // 将 LINQ 表达式映射为 Lucene Query（字段名需在实体描述器中已配置）
+        var query = LinqLucene.Where(ctx.Descriptor, expr);
+        return Task.FromResult<Query?>(query);
     }
-    private sealed class MediumProj { public Guid LibraryId { get; set; } }
+
+    private sealed class Project
+    {
+        public Guid LibraryId { get; set; }
+    }
 }
 ```
 
+提示：若调用端已通过 `ctx.Expression` 提供了表达式，而此 Provider 返回 `null`，管线会尝试自动将 `ctx.Expression` 转换为 Lucene Query 并合并（MUST）。
+
 #### 范围查询（TermRangeQuery）
 
-基于词项的范围比较按照“字符串字典序”进行。在索引阶段请先规范化数值/日期，确保排序正确。
-
-- 数值：使用固定宽度的零填充字符串（如 8 位）
-
-```csharp
-// 索引为零填充字符串，例如 "00001234"
-Expression<Func<ItemProj, bool>> expr = x => x.ReadCount >= "00000010" && x.ReadCount < "00000100";
-var q = LinqLucene.Where(ctx.Descriptor, expr);
-```
-
-- 日期：使用可排序的格式，例如 `yyyyMMddHHmmss`
-
-```csharp
-// 将 CreatedAt 索引为 "20250101000000" 风格字符串
-Expression<Func<ItemProj, bool>> expr = x => x.CreatedAt >= "20250101000000" && x.CreatedAt < "20260101000000";
-var q = LinqLucene.Where(ctx.Descriptor, expr);
-```
-
-注意：
-
-- 精确/规范化字段优先使用 `Keyword()/LowerCaseKeyword()`。
-- 如需真正的数值/日期范围类型，可考虑扩展为 Numeric/Points 查询。
-
-#### 关键字大小写不敏感（文化）
-
-通过 `LowerCaseKeyword()` 或 `LowerCaseKeyword(CultureInfo)` 在索引写入与查询映射阶段统一小写规范化：
-
-```csharp
-model.Entity<Tag>(e =>
-{
-    e.Field(x => x.Name, f => f.LowerCaseKeyword(new System.Globalization.CultureInfo("tr-TR")));
-});
-```
-
-该配置会在索引写入与 LINQ → Lucene 映射（Term/Prefix/Wildcard/IN）时应用小写转换以确保匹配一致。
+基于字符串的范围比较需在索引阶段规范化数值/日期（零填充/`yyyyMMddHHmmss`）。
 
 ### 并发与 UnitOfWork（重要）
 
-在同一个 HTTP 请求中并行执行多段数据库写入时，ABP 的请求级 UoW 会通过 AsyncLocal 传播到子任务，若直接在子任务中调用 `Begin()`（非 `requiresNew`），可能复用同一 UoW，导致：
-- 抛出错误：This unit of work has already been initialized.
-- 多任务写入被合并在同一批次，引发索引计数抖动。
+在同一 HTTP 请求中并发写入：
+- 若在子任务中调用 `Begin()` 且未 `requiresNew`，会复用同一 UoW，可能抛出 “This unit of work has already been initialized.”，且批次合并导致索引波动。
 
-为确保并发稳定性与索引一致性，推荐以下任一做法：
-
-1) 每个并发任务使用独立事务（推荐）
+解决方案（二选一）：
+- 每个任务单独事务：
 
 ```csharp
-// 为每个任务开启独立 UoW（requiresNew: true）
 using var uow = uowManager.Begin(new AbpUnitOfWorkOptions { IsTransactional = true }, requiresNew: true);
-// 批量写入...
+// 写入...
 await uow.CompleteAsync();
 ```
 
-2) 抑制执行上下文流动 + 常规 Begin
+- 抑制执行上下文流动：
 
 ```csharp
 var afc = ExecutionContext.SuppressFlow();
@@ -234,20 +199,26 @@ try
 {
     await Task.Run(async () =>
     {
-        using (CurrentTenant.Change(tenantId, tenantName))
         using (var uow = uowManager.Begin(new AbpUnitOfWorkOptions { IsTransactional = true }))
         {
-            // 批量写入...
             await uow.CompleteAsync();
         }
     });
 }
-finally
-{
-    afc.Undo();
-}
+finally { afc.Undo(); }
 ```
 
-补充：
-- 若你不在同一 HTTP 请求里并发执行，而是通过后台作业/队列做并发，每个作业天然拥有独立作用域与 UoW，无需上述处理。
-- 本模块已在内部修复了“UoW 内新增时 Id 尚未生成导致的索引覆盖”问题，但 UoW 边界与并发事务隔离仍需由调用方按上述方式处理。
+并发插入 Book 示例（不重建索引）：
+
+```csharp
+var tasks = Enumerable.Range(0, threads).Select(async t =>
+{
+    using var uow = uowManager.Begin(new AbpUnitOfWorkOptions { IsTransactional = true }, requiresNew: true);
+    for (var i = 0; i < perThread; i++)
+        await bookRepo.InsertAsync(new Book(GuidGenerator.Create(), $"Title-{t}-{i}", $"Author-{t}"), autoSave: true);
+    await uow.CompleteAsync();
+});
+await Task.WhenAll(tasks);
+```
+
+补充：后台作业天然隔离作用域/事务；模块内部虽改进了新增覆盖问题，但 UoW 边界与并发隔离需由调用方保证。

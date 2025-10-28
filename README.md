@@ -16,6 +16,25 @@ An ABP module based on Lucene.NET that provides configurable full-text search ca
 
 - Add project references to `Zyknow.Abp.Lucene.*` in your host application
 - Include this module in your host module's `DependsOn`
+- In your EF Core layer, your DbContext must inherit `LuceneAbpDbContext<TDbContext>` so the Lucene EF change interceptor is wired automatically. Example:
+
+```csharp
+// Host application's EF Core DbContext
+public class MyDbContext : LuceneAbpDbContext<MyDbContext>
+{
+    public MyDbContext(DbContextOptions<MyDbContext> options) : base(options) { }
+
+    protected override void OnModelCreating(ModelBuilder builder)
+    {
+        base.OnModelCreating(builder);
+        // ... your entity configurations
+    }
+}
+```
+
+Notes:
+- The base context registers an EF Core interceptor to publish entity change events used by the Lucene index synchronizer.
+- If your solution replaces module DbContexts (e.g., Identity/TenantManagement), still keep your concrete DbContext deriving from `LuceneAbpDbContext<TDbContext>`.
 
 ## Quick Start
 
@@ -120,7 +139,7 @@ model.Entity<Book>(e =>
 You can plug custom filters into the search pipeline via `ILuceneFilterProvider` in the Application layer:
 
 - Interface: `Task<Query?> BuildAsync(SearchFilterContext ctx)`
-- Context: `{ string EntityName, EntitySearchDescriptor Descriptor, SearchQueryInput Input }`
+- Context: `{ string EntityName, EntitySearchDesc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       riptor Descriptor, SearchQueryInput Input }`
 - Composition: the returned `Query` is added with `Occur.MUST` to the final query
 
 A lightweight LINQ → Lucene mapping helper is provided to write filters with simple LINQ expressions and convert them into Lucene queries:

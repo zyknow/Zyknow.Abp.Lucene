@@ -16,6 +16,25 @@
 
 - 将 `Zyknow.Abp.Lucene.*` 项目引用到宿主应用
 - 在宿主模块 `DependsOn` 中加入本模块
+- 在 EF Core 层，你的 DbContext 必须继承 `LuceneAbpDbContext<TDbContext>`，以便自动注入 Lucene 的 EF 变更拦截器。示例：
+
+```csharp
+// 宿主应用的 EF Core DbContext
+public class MyDbContext : LuceneAbpDbContext<MyDbContext>
+{
+    public MyDbContext(DbContextOptions<MyDbContext> options) : base(options) { }
+
+    protected override void OnModelCreating(ModelBuilder builder)
+    {
+        base.OnModelCreating(builder);
+        // ... 你的实体配置
+    }
+}
+```
+
+说明：
+- 基类会注册一个 EF Core 拦截器，用于发布实体变更事件，被 Lucene 索引同步器消费。
+- 如果你的解决方案替换了模块 DbContext（如 Identity/TenantManagement），仍然应让你的具体 DbContext 继承 `LuceneAbpDbContext<TDbContext>`。
 
 ## 快速上手
 

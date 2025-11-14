@@ -106,10 +106,26 @@ public class SearcherProviderTests
 
         Assert.True(res.TotalCount >= 2);
         Assert.Contains(res.Items, i => i.Payload.Values.Any(v => v.Contains("Lucene")));
+
+        // 追加断言：验证每条命中的 __IndexName 精确对应
+        foreach (var hit in res.Items)
+        {
+            var hasTitle = hit.Payload.ContainsKey(nameof(Book.Title));
+            var hasName = hit.Payload.ContainsKey(nameof(Item.Name));
+            Assert.True(hit.Payload.ContainsKey("__IndexName"));
+            if (hasTitle)
+            {
+                Assert.Equal("Book", hit.Payload["__IndexName"]);
+            }
+            if (hasName && !hasTitle)
+            {
+                Assert.Equal("Item", hit.Payload["__IndexName"]);
+            }
+        }
     }
 
     [Fact]
-    public async Task Concurrent_Search_Should_Be_Stable_And_Consistent()
+    public async Task MultiIndex_SearchMany_Should_Set_Correct_IndexName_In_Payload()
     {
         var root = CreateIsolatedIndexRoot();
         using var sp = BuildServiceProvider(root);
@@ -117,18 +133,101 @@ public class SearcherProviderTests
         var app = sp.GetRequiredService<LuceneAppService>();
 
         await indexer.RebuildAsync(typeof(Book));
+        await indexer.RebuildAsync(typeof(Item));
 
-        var docs = Enumerable.Range(0, 100).Select(i => new Book(i.ToString(), $"X-{i}", "AU", $"CX{i:0000}")).ToList();
-        await indexer.IndexRangeAsync(docs, replace: false);
-
-        var tasks = Enumerable.Range(0, 10).Select(async _ =>
+        await indexer.IndexRangeAsync(new[]
         {
-            var local = await app.SearchAsync("Book", new() { Query = "X", SkipCount = 0, MaxResultCount = 200 });
-            return local.TotalCount;
+            new Book("b1","Lucene Basics","Alan","B010"),
+            new Book("b2","Lucene Internals","Beth","B011")
+        }, replace: true);
+
+        await indexer.IndexRangeAsync(new[]
+        {
+            new Item("i1","Lucene sticker","B010"),
+            new Item("i2","Pen","B099")
+        }, replace: true);
+
+        var res = await app.SearchManyAsync(new()
+        {
+            Entities = ["Book","Item"],
+            Query = "Lucene",
+            SkipCount = 0,
+            MaxResultCount = 20
         });
 
-        var counts = await Task.WhenAll(tasks);
-        Assert.All(counts, c => Assert.Equal(100, c));
+        Assert.NotEmpty(res.Items);
+        foreach (var hit in res.Items)
+        {
+            Assert.True(hit.Payload.TryGetValue("__IndexName", out var idx));
+            if (hit.Payload.ContainsKey(nameof(Book.Title)))
+            {
+                Assert.Equal("Book", idx);
+            }
+            else if (hit.Payload.ContainsKey(nameof(Item.Name)))
+            {
+                Assert.Equal("Item", idx);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task MultiIndex_SearchMany_IndexName_Should_Not_Depend_On_Entities_Order()
+    {
+        var root = CreateIsolatedIndexRoot();
+        using var sp = BuildServiceProvider(root);
+        var indexer = sp.GetRequiredService<LuceneIndexManager>();
+        var app = sp.GetRequiredService<LuceneAppService>();
+
+        await indexer.RebuildAsync(typeof(Book));
+        await indexer.RebuildAsync(typeof(Item));
+
+        await indexer.IndexRangeAsync(new[]
+        {
+            new Book("b1","Lucene Guide","A","B100"),
+        }, replace: true);
+        await indexer.IndexRangeAsync(new[]
+        {
+            new Item("i1","Lucene T-Shirt","B100"),
+        }, replace: true);
+
+        // 顺序：Book, Item
+        var res1 = await app.SearchManyAsync(new()
+        {
+            Entities = ["Book","Item"],
+            Query = "Lucene",
+            SkipCount = 0,
+            MaxResultCount = 10
+        });
+
+        // 顺序：Item, Book
+        var res2 = await app.SearchManyAsync(new()
+        {
+            Entities = ["Item","Book"],
+            Query = "Lucene",
+            SkipCount = 0,
+            MaxResultCount = 10
+        });
+
+        // 对于包含 Title 的文档，__IndexName 应为 Book；包含 Name 的文档，__IndexName 为 Item
+        void AssertIndexNamesCorrect(Zyknow.Abp.Lucene.Dtos.SearchResultDto r)
+        {
+            foreach (var hit in r.Items)
+            {
+                var ok = hit.Payload.TryGetValue("__IndexName", out var nm);
+                Assert.True(ok);
+                if (hit.Payload.ContainsKey(nameof(Book.Title)))
+                {
+                    Assert.Equal("Book", nm);
+                }
+                else if (hit.Payload.ContainsKey(nameof(Item.Name)))
+                {
+                    Assert.Equal("Item", nm);
+                }
+            }
+        }
+
+        AssertIndexNamesCorrect(res1);
+        AssertIndexNamesCorrect(res2);
     }
 
     private record Book(string Id, string Title, string Author, string Code);

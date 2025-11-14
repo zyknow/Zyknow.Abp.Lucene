@@ -35,6 +35,14 @@ public class LuceneAppService(
     private readonly LuceneOptions _options = options.Value;
     private readonly ILuceneSearcherProvider _searcherProvider = searcherProvider;
 
+    // 内部类型：用于映射 docID 到来源描述符
+    private sealed class DocRange
+    {
+        public int Start { get; init; }
+        public int End { get; init; }
+        public EntitySearchDescriptor Desc { get; init; } = default!;
+    }
+
     [Authorize(ZyknowLucenePermissions.Search.Default)]
     public virtual async Task<SearchResultDto> SearchAsync(string entityName, SearchQueryInput input)
     {
@@ -263,6 +271,17 @@ public class LuceneAppService(
             // 注意：不要让 MultiReader 关闭子 reader（由 SearcherManager 管理）
             using var multi = new MultiReader(readers, false);
             var searcher = new IndexSearcher(multi);
+
+            // 修复：建立 docID -> 描述符 的映射，确保 __IndexName 精确对应来源索引
+            var docRanges = new List<DocRange>(descriptors.Count);
+            int baseDoc = 0;
+            for (int i = 0; i < readers.Length && i < descriptors.Count; i++)
+            {
+                int max = readers[i].MaxDoc;
+                docRanges.Add(new DocRange { Start = baseDoc, End = baseDoc + max, Desc = descriptors[i] });
+                baseDoc += max;
+            }
+
             var topN = input.SkipCount + input.MaxResultCount;
             var hits = searcher.Search(finalQuery, topN);
             logger.LogInformation("Lucene multi search returned {Total} hits across {Count} indexes", hits.TotalHits, readers.Length);
@@ -285,7 +304,17 @@ public class LuceneAppService(
                     }
                 }
 
-                payload["__IndexName"] = ResolveDocIndexName(descriptors, doc);
+                // 使用 docID 区间映射确定命中来源索引名
+                string indexName = "Unknown";
+                foreach (var range in docRanges)
+                {
+                    if (sd.Doc >= range.Start && sd.Doc < range.End)
+                    {
+                        indexName = range.Desc.IndexName;
+                        break;
+                    }
+                }
+                payload["__IndexName"] = indexName;
                 var id = descriptors.Select(d => doc.Get(d.IdFieldName)).FirstOrDefault(s => !string.IsNullOrEmpty(s)) ?? string.Empty;
 
                 Dictionary<string, List<string>>? highlights = null;
@@ -452,20 +481,6 @@ public class LuceneAppService(
         return live;
     }
 
-    private static string ResolveDocIndexName(IEnumerable<EntitySearchDescriptor> descriptors, Document doc)
-    {
-        // 简单策略：匹配哪个描述符的存储字段能唯一识别来源；若无法唯一，则返回 Unknown
-        foreach (var d in descriptors)
-        {
-            var hasAny = d.Fields.Any(f => f.Store && doc.Get(f.Name) != null);
-            if (hasAny)
-            {
-                return d.IndexName;
-            }
-        }
-
-        return "Unknown";
-    }
 
     // 新增：构建高亮片段
     private Dictionary<string, List<string>> BuildHighlights(Query query, Analyzer analyzer, Document doc, IEnumerable<FieldDescriptor> fields)

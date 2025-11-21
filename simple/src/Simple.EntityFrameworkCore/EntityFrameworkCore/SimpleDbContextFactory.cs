@@ -25,7 +25,8 @@ public class SimpleDbContextFactory : IDesignTimeDbContextFactory<SimpleDbContex
     {
         var builder = new ConfigurationBuilder()
             .SetBasePath(Path.Combine(Directory.GetCurrentDirectory(), "../Simple.DbMigrator/"))
-            .AddJsonFile("appsettings.json", optional: false);
+            .AddJsonFile("appsettings.json", optional: false)
+            .AddEnvironmentVariables();
 
         return builder.Build();
     }

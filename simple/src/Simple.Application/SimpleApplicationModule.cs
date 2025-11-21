@@ -11,6 +11,7 @@ using Zyknow.Abp.Lucene; // 引入 Lucene 模块
 namespace Simple;
 
 [DependsOn(
+    typeof(AbpAutoMapperModule),
     typeof(SimpleDomainModule),
     typeof(SimpleApplicationContractsModule),
     typeof(AbpPermissionManagementApplicationModule),
@@ -20,14 +21,11 @@ namespace Simple;
     typeof(AbpTenantManagementApplicationModule),
     typeof(AbpSettingManagementApplicationModule),
     typeof(ZyknowLuceneApplicationModule) // 追加 Lucene 应用模块
-    )]
+)]
 public class SimpleApplicationModule : AbpModule
 {
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
-        Configure<AbpAutoMapperOptions>(options =>
-        {
-            options.AddMaps<SimpleApplicationModule>();
-        });
+        Configure<AbpAutoMapperOptions>(options => { options.AddMaps<SimpleApplicationModule>(); });
     }
 }

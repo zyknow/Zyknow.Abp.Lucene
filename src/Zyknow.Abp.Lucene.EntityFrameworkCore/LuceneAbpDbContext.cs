@@ -10,8 +10,11 @@ public abstract class LuceneAbpDbContext<TDbContext>(DbContextOptions<TDbContext
 {
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        var luceneEfChangeInterceptor = LazyServiceProvider.LazyGetRequiredService<LuceneEfChangeInterceptor>();
-        optionsBuilder.AddInterceptors([luceneEfChangeInterceptor]);
+        var luceneEfChangeInterceptor = LazyServiceProvider?.LazyGetService<LuceneEfChangeInterceptor>();
+        if (luceneEfChangeInterceptor != null)
+            optionsBuilder.AddInterceptors([luceneEfChangeInterceptor]);
+        
+        
         base.OnConfiguring(optionsBuilder);
     }
 }

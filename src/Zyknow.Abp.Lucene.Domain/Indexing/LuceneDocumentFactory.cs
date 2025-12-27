@@ -1,5 +1,6 @@
 using System.Reflection;
 using Lucene.Net.Documents;
+using Lucene.Net.Index;
 using Zyknow.Abp.Lucene.Descriptors;
 
 namespace Zyknow.Abp.Lucene.Indexing;
@@ -9,6 +10,8 @@ public static class LuceneDocumentFactory
     public static Document CreateDocument(object entity, EntitySearchDescriptor descriptor)
     {
         var doc = new Document();
+        // Index name field (for multi-search filtering / diagnostics)
+        doc.Add(new StringField(LuceneConstants.IndexNameField, descriptor.IndexName, Field.Store.YES));
         // ID field
         var idProp = entity.GetType().GetProperty(descriptor.IdFieldName, BindingFlags.Public | BindingFlags.Instance);
         var idVal = idProp?.GetValue(entity)?.ToString() ?? string.Empty;
@@ -63,6 +66,8 @@ public static class LuceneDocumentFactory
     public static Document CreateDocument(IReadOnlyDictionary<string, string> values, EntitySearchDescriptor descriptor)
     {
         var doc = new Document();
+        // Index name field (for multi-search filtering / diagnostics)
+        doc.Add(new StringField(LuceneConstants.IndexNameField, descriptor.IndexName, Field.Store.YES));
         // ID field from provided values
         values.TryGetValue(descriptor.IdFieldName, out var id);
         id ??= string.Empty;

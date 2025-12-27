@@ -8,12 +8,14 @@ using Volo.Abp.MultiTenancy;
 using Zyknow.Abp.Lucene.Descriptors;
 using Zyknow.Abp.Lucene.Options;
 using System.Collections.Concurrent;
+using System.Reflection;
 
 namespace Zyknow.Abp.Lucene.Indexing;
 
-public class LuceneIndexManager(IOptions<LuceneOptions> options, ICurrentTenant currentTenant, ILogger<LuceneIndexManager> logger)
+public class LuceneIndexManager(IOptions<LuceneOptions> options, ICurrentTenant currentTenant, ILogger<LuceneIndexManager> logger, IServiceProvider serviceProvider)
 {
     private readonly LuceneOptions _options = options.Value;
+    private readonly IServiceProvider _serviceProvider = serviceProvider;
     // 新增：按索引路径维护写入锁，串行化同一索引的写操作，避免 IndexWriter 并发冲突
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> _indexLocks = new(StringComparer.OrdinalIgnoreCase);
 
@@ -23,8 +25,24 @@ public class LuceneIndexManager(IOptions<LuceneOptions> options, ICurrentTenant 
         logger.LogInformation("Indexing single entity: {EntityType}", typeof(T).Name);
         Write(descriptor, writer =>
         {
+            var id = GetEntityIdString(entity!, descriptor);
+            if (ShouldExclude(entity!, descriptor))
+            {
+                if (!string.IsNullOrWhiteSpace(id))
+                {
+                    writer.DeleteDocuments(new Term(descriptor.IdFieldName, id));
+                    logger.LogDebug("IndexWriter DeleteDocuments (excluded): {Index} #{Id}", descriptor.IndexName, id);
+                }
+
+                return;
+            }
+
             var doc = LuceneDocumentFactory.CreateDocument(entity!, descriptor);
-            var id = doc.Get(descriptor.IdFieldName);
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                id = doc.Get(descriptor.IdFieldName);
+            }
+
             writer.UpdateDocument(new Term(descriptor.IdFieldName, id), doc);
             logger.LogDebug("IndexWriter UpdateDocument: {Index} #{Id}", descriptor.IndexName, id);
         });
@@ -46,8 +64,23 @@ public class LuceneIndexManager(IOptions<LuceneOptions> options, ICurrentTenant 
 
             foreach (var entity in list)
             {
+                var id = GetEntityIdString(entity!, descriptor);
+                if (ShouldExclude(entity!, descriptor))
+                {
+                    if (!string.IsNullOrWhiteSpace(id))
+                    {
+                        writer.DeleteDocuments(new Term(descriptor.IdFieldName, id));
+                    }
+
+                    continue;
+                }
+
                 var doc = LuceneDocumentFactory.CreateDocument(entity!, descriptor);
-                var id = doc.Get(descriptor.IdFieldName);
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    id = doc.Get(descriptor.IdFieldName);
+                }
+
                 writer.UpdateDocument(new Term(descriptor.IdFieldName, id), doc);
             }
             logger.LogDebug("IndexWriter UpdateDocument batch done: {Index} x{Count}", descriptor.IndexName, list.Count);
@@ -58,6 +91,8 @@ public class LuceneIndexManager(IOptions<LuceneOptions> options, ICurrentTenant 
     public Task IndexRangeDocumentsAsync(EntitySearchDescriptor descriptor, IEnumerable<Document> documents,
         bool replace = false)
     {
+        // NOTE: raw Document 模式不支持 IndexExclusions（需要实体对象才能评估剔除规则）。
+        // 若使用端配置了 IndexExclusions，请在上游同步时回退到实体加载模式。
         var docs = documents as ICollection<Document> ?? documents.ToList();
         logger.LogInformation("Indexing {Count} raw documents into {Index} (replace={Replace})", docs.Count, descriptor.IndexName, replace);
         Write(descriptor, writer =>
@@ -211,5 +246,43 @@ public class LuceneIndexManager(IOptions<LuceneOptions> options, ICurrentTenant 
         }
 
         return Path.Combine(root, indexName);
+    }
+
+    private bool ShouldExclude(object entity, EntitySearchDescriptor descriptor)
+    {
+        if (descriptor.IndexExclusions.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var rule in descriptor.IndexExclusions)
+        {
+            try
+            {
+                if (rule.ShouldExclude(_serviceProvider, entity))
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+                // 剔除规则异常不应影响主流程；默认不剔除
+            }
+        }
+
+        return false;
+    }
+
+    private static string GetEntityIdString(object entity, EntitySearchDescriptor descriptor)
+    {
+        try
+        {
+            var idProp = entity.GetType().GetProperty(descriptor.IdFieldName, BindingFlags.Public | BindingFlags.Instance);
+            return idProp?.GetValue(entity)?.ToString() ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
     }
 }

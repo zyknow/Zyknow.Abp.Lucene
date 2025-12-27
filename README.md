@@ -2,21 +2,58 @@
 
 [简体中文](README.zh.md) | English
 
-An ABP module based on Lucene.NET that provides configurable full-text search capabilities for your system.
+An ABP module integrating Lucene.NET to provide configurable full-text search, indexing, filtering and highlighting.
 
 ## Features
 
-- Unified ICU general analyzer (multilingual friendly)
-- Fluent API: choose indexed fields, keyword fields, boost, autocomplete
-- Optional multi-tenant index isolation
-- Index management: add/update/delete/rebuild
-- Search service: multi-field query, paging, stored fields (Payload)
+- **Fluent schema (ConfigureLucene)**: declare per-entity indexed fields, keyword fields, numeric/date fields, boost, stored payload fields, derived fields (ValueField), etc.
+- **Index management**: upsert/delete/rebuild, delete-by-field, count.
+- **Automatic indexing (EF Core)**: capture SaveChanges changes and flush to Lucene on UoW completion.
+- **Multi-tenant index isolation** (`PerTenantIndex`).
+- **Search APIs**:
+  - Single index search (`/api/lucene/search/{entity}`)
+  - Multi-index aggregation search (`/api/lucene/search-many`)
+  - Multi-field query + paging + highlight snippets
+- **Filtering**:
+  - Plug-in filters via `ILuceneFilterProvider` (Application layer)
+  - **Default forced filters configured in `ConfigureLucene`** via `ForceFilter(...)` (always applied as `MUST`, and supports DI via `IServiceProvider`)
+- **Index exclusion rules**:
+  - Configure `ExcludeFromIndexWhen(...)` to prevent indexing certain entities (and try to delete old docs by id when an entity becomes excluded)
 
-## Installation & Integration
+## Compatibility
 
-- Add project references to `Zyknow.Abp.Lucene.*` in your host application
-- Include this module in your host module's `DependsOn`
-- In your EF Core layer, your DbContext must inherit `LuceneAbpDbContext<TDbContext>` so the Lucene EF change interceptor is wired automatically. Example:
+- **Package version**: `10.0.0-preview.2`
+- **Target framework**: `net10.0`
+- **ABP**: `10.0.0`
+- **Lucene.NET**: `4.8.0-beta00017`
+
+## Installation
+
+You can reference projects directly, or use NuGet packages (recommended in host applications).
+
+Typical host layers:
+
+- **Domain / Application only**: reference `Zyknow.Abp.Lucene.Application`
+- **EF Core integration**: reference `Zyknow.Abp.Lucene.EntityFrameworkCore`
+- **HTTP endpoints**: reference `Zyknow.Abp.Lucene.HttpApi`
+
+Example (NuGet):
+
+```bash
+dotnet add package Zyknow.Abp.Lucene.HttpApi --version 10.0.0-preview.2
+dotnet add package Zyknow.Abp.Lucene.EntityFrameworkCore --version 10.0.0-preview.2
+```
+
+## Integration (ABP modules)
+
+- Add the module(s) to your host module `DependsOn`:
+  - `ZyknowLuceneApplicationModule`
+  - `ZyknowLuceneEntityFrameworkCoreModule` (if using EF Core auto indexing)
+  - `ZyknowLuceneHttpApiModule` (if exposing REST endpoints)
+
+## EF Core auto indexing (recommended)
+
+If you want automatic indexing based on EF Core `SaveChanges`, your DbContext should inherit `LuceneAbpDbContext<TDbContext>` so the EF interceptor is wired automatically:
 
 ```csharp
 // Host application's EF Core DbContext
@@ -33,14 +70,15 @@ public class MyDbContext : LuceneAbpDbContext<MyDbContext>
 ```
 
 Notes:
-- The base context registers an EF Core interceptor to publish entity change events used by the Lucene index synchronizer.
-- If your solution replaces module DbContexts (e.g., Identity/TenantManagement), still keep your concrete DbContext deriving from `LuceneAbpDbContext<TDbContext>`.
+
+- The base context adds `LuceneEfChangeInterceptor` via `DbContextOptionsBuilder.AddInterceptors(...)`.
+- Auto indexing is controlled by `LuceneOptions.EnableAutoIndexingEvents` (default `true`).
 
 ## Quick Start
 
-The module subscribes to ABP local entity events internally and only listens to entity types registered in `ConfigureLucene`, achieving automatic index maintenance.
+The module only indexes entity types registered in `LuceneOptions.ConfigureLucene(...)`.
 
-- Configuration example (e.g., in your HttpApi or Web module):
+### 1) Configure Lucene options
 
 ```csharp
 // using Zyknow.Abp.Lucene.Options;
@@ -55,13 +93,13 @@ Configure<LuceneOptions>(opt =>
         {
             e.Field(x => x.Title, f => f.Store());
             e.Field(x => x.Author, f => f.Store());
-            e.Field(x => x.Code, f => f.Keyword());
+            e.Field(x => x.Code, f => f.Keyword().Store()); // store if you want it in Payload
         });
     });
 });
 ```
 
-### HTTP API
+### 2) Query via HTTP API
 
 - GET `api/lucene/search/{entity}`
 - GET `api/lucene/search-many`
@@ -75,7 +113,7 @@ Configure<LuceneOptions>(opt =>
 - Each hit (`SearchHitDto`) contains:
   - `EntityId`: document primary key (from each entity descriptor's `IdFieldName`)
   - `Score`: relevance score
-  - `Payload`: stored field key-value pairs. In multi-entity aggregation, it also contains `Payload["__IndexName"]` to indicate the source entity index name.
+  - `Payload`: stored field key-value pairs. In multi-entity aggregation, it also contains `Payload["__IndexName"]` to indicate the source index name.
 
 Notes
 
@@ -188,6 +226,53 @@ public class LibraryFilterProvider : ILuceneFilterProvider, IScopedDependency
 ```
 
 Tip: If `ctx.Expression` is already provided by the caller and this provider returns `null`, the pipeline will try to convert that expression to a Lucene `Query` and merge it with `MUST`.
+
+### Default forced filters (ConfigureLucene)
+
+If you prefer to centralize filters together with the entity schema, you can use `ForceFilter(...)`.
+
+- Always applied as `Occur.MUST`
+- Receives `IServiceProvider`, so you can resolve dependencies (e.g., `ICurrentUser`, permission stores, tenant providers, etc.)
+
+Example: force filter by allowed LibraryId list and exclude missing entries:
+
+```csharp
+using Lucene.Net.Search;
+using Zyknow.Abp.Lucene.Filtering;
+
+model.Entity<Medium>(e =>
+{
+    // Filterable fields must be searchable (e.g., Keyword()).
+    e.Field(x => x.LibraryId, f => f.Keyword());
+    e.Field(x => x.IsMissing, f => f.Keyword());
+
+    e.ForceFilter<SearchQueryInput>((sp, ctx) =>
+    {
+        var permissionStore = sp.GetRequiredService<IMyLibraryPermissionService>();
+        var allowedIds = permissionStore.GetAllowedLibraryIds();
+
+        var must = new BooleanQuery
+        {
+            { LuceneQueries.In(nameof(Medium.LibraryId), allowedIds), Occur.MUST },
+            // if you index bool as string, use "False"/"True" accordingly
+            { LuceneQueries.Term(nameof(Medium.IsMissing), "False"), Occur.MUST }
+        };
+        return must;
+    });
+});
+```
+
+### Index exclusion rules (ConfigureLucene)
+
+Use `ExcludeFromIndexWhen(...)` to skip indexing certain entities (and try to delete any existing doc by id when an entity becomes excluded):
+
+```csharp
+model.Entity<Medium>(e =>
+{
+    e.Field(x => x.Title, f => f.Store());
+    e.ExcludeFromIndexWhen((sp, x) => x.IsDeleted);
+});
+```
 
 #### Range queries (TermRangeQuery)
 

@@ -18,6 +18,38 @@ public static class LinqLucene
     {
         switch (node)
         {
+            // Boolean field shorthand: x => x.IsActive  (treated as IsActive == true)
+            case MemberExpression me when me.Type == typeof(bool):
+            {
+                var fieldName = ResolveMemberName(descriptor, me);
+                var value = NormalizeForKeyword(descriptor, fieldName, bool.TrueString);
+                return new TermQuery(new Term(fieldName, value));
+            }
+
+            // Boolean NOT: x => !x.IsMissing  OR general negation: x => !(x.Field == "a")
+            case UnaryExpression ue when ue.NodeType == ExpressionType.Not:
+            {
+                // Fast-path for boolean fields: !x.BoolField -> BoolField == false
+                // (This matches how documents are written: bool.ToString() => "True"/"False",
+                // optionally lowercased via FieldDescriptor.LowerCaseKeyword.)
+                try
+                {
+                    var fieldName = ResolveMemberName(descriptor, ue.Operand);
+                    var falseValue = NormalizeForKeyword(descriptor, fieldName, bool.FalseString);
+                    return new TermQuery(new Term(fieldName, falseValue));
+                }
+                catch (Exception)
+                {
+                    // Operand isn't a simple field selector; fall back to MUST_NOT wrapping.
+                    var inner = Visit(descriptor, ue.Operand);
+                    return new BooleanQuery
+                    {
+                        { new MatchAllDocsQuery(), Occur.MUST },
+                        { inner, Occur.MUST_NOT }
+                    };
+                }
+            }
+
             case BinaryExpression be when be.NodeType == ExpressionType.Equal:
             {
                 var fieldName = ResolveMemberName(descriptor, be.Left is MemberExpression ? be.Left : be.Right);

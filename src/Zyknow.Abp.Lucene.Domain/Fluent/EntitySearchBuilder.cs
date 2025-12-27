@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using Lucene.Net.Search;
 using Zyknow.Abp.Lucene.Descriptors;
 
 namespace Zyknow.Abp.Lucene.Fluent;
@@ -50,6 +51,36 @@ public class EntitySearchBuilder<T>
         var fb = new FieldBuilder(valueSelector);
         configure?.Invoke(fb);
         _descriptor.Fields.Add(fb.Build());
+        return this;
+    }
+
+    /// <summary>
+    /// 配置默认查询过滤（强制 MUST 条件），每次查询都会叠加此过滤器。
+    /// </summary>
+    /// <typeparam name="TInput">查询输入类型；例如 <c>SearchQueryInput</c> 或 <c>MultiSearchInput</c>。</typeparam>
+    /// <param name="buildAsync">构建过滤 Query 的委托，可使用 <see cref="IServiceProvider"/> 注入依赖。</param>
+    public EntitySearchBuilder<T> ForceFilter<TInput>(
+        Func<IServiceProvider, LuceneQueryFilterContext<TInput>, Task<Query?>> buildAsync)
+    {
+        _descriptor.DefaultQueryFilters.Add(new DelegateLuceneQueryFilterRegistration<TInput>(buildAsync));
+        return this;
+    }
+
+    /// <summary>
+    /// 配置默认查询过滤（同步版本）。
+    /// </summary>
+    public EntitySearchBuilder<T> ForceFilter<TInput>(
+        Func<IServiceProvider, LuceneQueryFilterContext<TInput>, Query?> build)
+    {
+        return ForceFilter<TInput>((sp, ctx) => Task.FromResult(build(sp, ctx)));
+    }
+
+    /// <summary>
+    /// 配置索引剔除规则：当返回 true 时实体不会写入索引，并会尽可能从索引删除。
+    /// </summary>
+    public EntitySearchBuilder<T> ExcludeFromIndexWhen(Func<IServiceProvider, T, bool> predicate)
+    {
+        _descriptor.IndexExclusions.Add(new DelegateLuceneIndexExclusionRegistration<T>(predicate));
         return this;
     }
 

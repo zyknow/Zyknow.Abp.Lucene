@@ -20,6 +20,7 @@ using Zyknow.Abp.Lucene.Options;
 using Zyknow.Abp.Lucene.Permissions;
 using Lucene.Net.Search.Highlight;
 using Lucene.Net.Analysis;
+using Zyknow.Abp.Lucene;
 
 namespace Zyknow.Abp.Lucene.Services;
 
@@ -112,6 +113,27 @@ public class LuceneAppService(
         // 执行过滤器（MUST 合并）
         var filterCtx = new SearchFilterContext(entityName, descriptor, input);
         var composed = new BooleanQuery { { finalQuery, Occur.MUST } };
+
+        // 新增：执行默认过滤（强制 MUST；支持在 ConfigureLucene 中集中配置，并提供 IServiceProvider 以便注入依赖）
+        if (descriptor.DefaultQueryFilters.Count > 0)
+        {
+            foreach (var reg in descriptor.DefaultQueryFilters)
+            {
+                try
+                {
+                    var q = await reg.BuildAsync(serviceProvider, entityName, descriptor, input);
+                    if (q != null)
+                    {
+                        composed.Add(q, Occur.MUST);
+                    }
+                }
+                catch
+                {
+                    // 默认过滤构建异常不应导致查询失败；忽略并继续
+                }
+            }
+        }
+
         foreach (var provider in filterProviders)
         {
             var fq = await provider.BuildAsync(filterCtx);
@@ -272,6 +294,44 @@ public class LuceneAppService(
             using var multi = new MultiReader(readers, false);
             var searcher = new IndexSearcher(multi);
 
+            // 新增：默认过滤（按索引隔离）：
+            // (finalQuery MUST) AND ( (IndexName==A AND FilterA...) OR (IndexName==B AND FilterB...) OR ... )
+            var composed = new BooleanQuery { { finalQuery, Occur.MUST } };
+            var perIndex = new BooleanQuery();
+            foreach (var d in descriptors)
+            {
+                var clause = new BooleanQuery
+                {
+                    { new TermQuery(new Term(LuceneConstants.IndexNameField, d.IndexName)), Occur.MUST }
+                };
+
+                if (d.DefaultQueryFilters.Count > 0)
+                {
+                    foreach (var reg in d.DefaultQueryFilters)
+                    {
+                        try
+                        {
+                            var q = await reg.BuildAsync(serviceProvider, d.IndexName, d, input);
+                            if (q != null)
+                            {
+                                clause.Add(q, Occur.MUST);
+                            }
+                        }
+                        catch
+                        {
+                            // ignore
+                        }
+                    }
+                }
+
+                perIndex.Add(clause, Occur.SHOULD);
+            }
+
+            if (perIndex.Clauses.Count > 0)
+            {
+                composed.Add(perIndex, Occur.MUST);
+            }
+
             // 修复：建立 docID -> 描述符 的映射，确保 __IndexName 精确对应来源索引
             var docRanges = new List<DocRange>(descriptors.Count);
             int baseDoc = 0;
@@ -283,7 +343,7 @@ public class LuceneAppService(
             }
 
             var topN = input.SkipCount + input.MaxResultCount;
-            var hits = searcher.Search(finalQuery, topN);
+            var hits = searcher.Search(composed, topN);
             logger.LogInformation("Lucene multi search returned {Total} hits across {Count} indexes", hits.TotalHits, readers.Length);
             var slice = hits.ScoreDocs.Skip(input.SkipCount).Take(input.MaxResultCount).ToList();
 
@@ -321,7 +381,7 @@ public class LuceneAppService(
                 if (input.Highlight)
                 {
                     var allStoreFields = descriptors.SelectMany(d => d.Fields.Where(x => x.Store));
-                    highlights = BuildHighlights(finalQuery, analyzer, doc, allStoreFields);
+                    highlights = BuildHighlights(composed, analyzer, doc, allStoreFields);
                 }
 
                 results.Add(new SearchHitDto

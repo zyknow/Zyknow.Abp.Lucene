@@ -37,9 +37,10 @@ public class LuceneIndexSynchronizer(
     {
         var descriptor = GetDescriptor(typeof(T));
         var hasValueSelectors = descriptor.Fields.Any(f => f.ValueSelector != null);
+        var hasIndexExclusions = descriptor.IndexExclusions.Count > 0;
 
         // 自动根据描述器进行字段投影（仅当无 ValueSelector 时）
-        if (!hasValueSelectors)
+        if (!hasValueSelectors && !hasIndexExclusions)
         {
             var propNames = descriptor.Fields
                 .Where(f => f.Selector != null)
@@ -140,9 +141,10 @@ public class LuceneIndexSynchronizer(
     {
         var descriptor = GetDescriptor(typeof(T));
         var hasValueSelectors = descriptor.Fields.Any(f => f.ValueSelector != null);
+        var hasIndexExclusions = descriptor.IndexExclusions.Count > 0;
         var total = 0;
 
-        if (!hasValueSelectors)
+        if (!hasValueSelectors && !hasIndexExclusions)
         {
             var propNames = descriptor.Fields
                 .Where(f => f.Selector != null)

@@ -22,7 +22,7 @@ public class ZyknowLuceneDomainSharedModule : AbpModule
         {
             options.Resources
                 .Add<ZyknowLuceneResource>("en")
-                .AddVirtualJson("/Zyknow.Abp.Lucene/Localization/ZyknowLucene");
+                .AddVirtualJson("/Localization/ZyknowLucene");
         });
     }
 }

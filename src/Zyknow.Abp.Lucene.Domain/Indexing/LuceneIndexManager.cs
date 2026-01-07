@@ -53,7 +53,7 @@ public class LuceneIndexManager(IOptions<LuceneOptions> options, ICurrentTenant 
     {
         var descriptor = GetDescriptor(typeof(T));
         var list = entities as ICollection<T> ?? entities.ToList();
-        logger.LogInformation("Indexing {Count} entities into {Index} (replace={Replace})", list.Count, descriptor.IndexName, replace);
+        logger.LogDebug("Indexing {Count} entities into {Index} (replace={Replace})", list.Count, descriptor.IndexName, replace);
         Write(descriptor, writer =>
         {
             if (replace)
@@ -94,7 +94,7 @@ public class LuceneIndexManager(IOptions<LuceneOptions> options, ICurrentTenant 
         // NOTE: raw Document 模式不支持 IndexExclusions（需要实体对象才能评估剔除规则）。
         // 若使用端配置了 IndexExclusions，请在上游同步时回退到实体加载模式。
         var docs = documents as ICollection<Document> ?? documents.ToList();
-        logger.LogInformation("Indexing {Count} raw documents into {Index} (replace={Replace})", docs.Count, descriptor.IndexName, replace);
+        logger.LogDebug("Indexing {Count} raw documents into {Index} (replace={Replace})", docs.Count, descriptor.IndexName, replace);
         Write(descriptor, writer =>
         {
             if (replace)

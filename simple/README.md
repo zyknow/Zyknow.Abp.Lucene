@@ -1,4 +1,4 @@
-﻿# Simple
+# Simple
 
 ## About this solution
 
@@ -6,8 +6,8 @@ This is a layered startup solution based on [Domain Driven Design (DDD)](https:/
 
 ### Pre-requirements
 
-* [.NET9.0+ SDK](https://dotnet.microsoft.com/download/dotnet)
-* [Node v18 or 20](https://nodejs.org/en)
+* [.NET 11 SDK](https://dotnet.microsoft.com/download/dotnet/11.0) (`11.0.100` or newer .NET 11 SDK)
+* [Node.js 22 LTS or newer](https://nodejs.org/en) for client-side dependencies
 
 ### Configurations
 
@@ -18,7 +18,7 @@ The solution comes with a default configuration that works out of the box. Howev
 ### Before running the application
 
 * Run `abp install-libs` command on your solution folder to install client-side package dependencies. This step is automatically done when you create a new solution, if you didn't especially disabled it. However, you should run it yourself if you have first cloned this solution from your source control, or added a new client-side package dependency to your solution.
-* Run `Simple.DbMigrator` to create the initial database. This step is also automatically done when you create a new solution, if you didn't especially disabled it. This should be done in the first run. It is also needed if a new database migration is added to the solution later.
+* Run `Simple.DbMigrator` before starting the sample. It creates and seeds a new SQLite database or applies the ABP 11 schema migration to an existing one. Back up an existing database before upgrading.
 
 #### Generating a Signing Certificate
 

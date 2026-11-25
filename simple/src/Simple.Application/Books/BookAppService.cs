@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -48,7 +48,7 @@ public class BookAppService : ApplicationService, IBookAppService
 
         return new PagedResultDto<BookDto>(
             totalCount,
-            ObjectMapper.Map<List<Book>, List<BookDto>>(books)
+            books.Select(book => ObjectMapper.Map<Book, BookDto>(book)).ToList()
         );
     }
 

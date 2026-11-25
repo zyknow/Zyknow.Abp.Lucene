@@ -3,7 +3,6 @@
   <Import Project="..\..\..\common.props" />
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <AspNetCoreHostingModel>InProcess</AspNetCoreHostingModel>
     <RootNamespace>Simple.Web</RootNamespace>
@@ -42,8 +41,11 @@
     <PackageReference Include="AspNetCore.HealthChecks.UI" Version="9.0.0" />
     <PackageReference Include="AspNetCore.HealthChecks.UI.Client" Version="9.0.0" />
     <PackageReference Include="AspNetCore.HealthChecks.UI.InMemory.Storage" Version="9.0.0" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.0" />
-    <PackageReference Include="Serilog.AspNetCore" Version="9.0.0" />
+    <!-- Override vulnerable transitive versions from HealthChecks UI and ABP Studio. -->
+    <PackageReference Include="KubernetesClient" Version="17.0.14" />
+    <PackageReference Include="MessagePack" Version="3.1.12" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="$(DotNetPackageVersion)" />
+    <PackageReference Include="Serilog.AspNetCore" Version="11.0.0" />
     <PackageReference Include="Serilog.Sinks.Async" Version="2.1.0" />
   </ItemGroup>
 
@@ -72,7 +74,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Volo.Abp.Studio.Client.AspNetCore" Version="1.2.1" />
+    <PackageReference Include="Volo.Abp.Studio.Client.AspNetCore" Version="4.0.0" />
   </ItemGroup>
 
 </Project>

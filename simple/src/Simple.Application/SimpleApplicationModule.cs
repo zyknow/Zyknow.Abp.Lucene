@@ -1,8 +1,8 @@
-﻿using Volo.Abp.PermissionManagement;
+using Volo.Abp.PermissionManagement;
 using Volo.Abp.SettingManagement;
 using Volo.Abp.Account;
 using Volo.Abp.Identity;
-using Volo.Abp.AutoMapper;
+using Volo.Abp.Mapperly;
 using Volo.Abp.FeatureManagement;
 using Volo.Abp.Modularity;
 using Volo.Abp.TenantManagement;
@@ -11,7 +11,7 @@ using Zyknow.Abp.Lucene; // 引入 Lucene 模块
 namespace Simple;
 
 [DependsOn(
-    typeof(AbpAutoMapperModule),
+    typeof(AbpMapperlyModule),
     typeof(SimpleDomainModule),
     typeof(SimpleApplicationContractsModule),
     typeof(AbpPermissionManagementApplicationModule),
@@ -24,8 +24,4 @@ namespace Simple;
 )]
 public class SimpleApplicationModule : AbpModule
 {
-    public override void ConfigureServices(ServiceConfigurationContext context)
-    {
-        Configure<AbpAutoMapperOptions>(options => { options.AddMaps<SimpleApplicationModule>(); });
-    }
 }

@@ -22,10 +22,10 @@ An ABP module integrating Lucene.NET to provide configurable full-text search, i
 
 ## Compatibility
 
-- **Package version**: `10.0.0-preview.2`
-- **Target framework**: `net10.0`
-- **ABP**: `10.0.0`
-- **Lucene.NET**: `4.8.0-beta00017`
+- **Target package version**: `11.0.0-preview.1` (Lucene.NET 4.8 is still in beta)
+- **Target framework**: `net11.0` (build with .NET SDK `11.0.100` or newer .NET 11 SDK)
+- **ABP / EF Core**: `11.0.0`
+- **Lucene.NET**: `4.8.0-beta00018`
 
 ## Installation
 
@@ -40,8 +40,8 @@ Typical host layers:
 Example (NuGet):
 
 ```bash
-dotnet add package Zyknow.Abp.Lucene.HttpApi --version 10.0.0-preview.2
-dotnet add package Zyknow.Abp.Lucene.EntityFrameworkCore --version 10.0.0-preview.2
+dotnet add package Zyknow.Abp.Lucene.HttpApi --version 11.0.0-preview.1
+dotnet add package Zyknow.Abp.Lucene.EntityFrameworkCore --version 11.0.0-preview.1
 ```
 
 ## Integration (ABP modules)

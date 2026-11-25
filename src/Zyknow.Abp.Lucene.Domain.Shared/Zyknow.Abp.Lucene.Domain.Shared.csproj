@@ -4,7 +4,6 @@
     
 
     <PropertyGroup>
-        <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <RootNamespace>Zyknow.Abp.Lucene</RootNamespace>
@@ -14,7 +13,7 @@
     <ItemGroup>
         <PackageReference Include="Volo.Abp" Version="$(AbpVersion)"/>
         <PackageReference Include="Volo.Abp.Ddd.Domain.Shared" Version="$(AbpVersion)"/>
-        <PackageReference Include="Microsoft.Extensions.FileProviders.Embedded" Version="10.0.0" />
+        <PackageReference Include="Microsoft.Extensions.FileProviders.Embedded" Version="$(DotNetPackageVersion)" />
         <PackageReference Include="Lucene.Net" Version="$(LuceneVersion)"/>
         <PackageReference Include="Lucene.Net.Analysis.Common" Version="$(LuceneVersion)"/>
         <PackageReference Include="Lucene.Net.ICU" Version="$(LuceneVersion)"/>

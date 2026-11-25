@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version_suffix:
-        description: '可选版本后缀（例如: preview.1）- 最终版本形如 1.0.0-preview.1'
+        description: '覆盖预发布后缀（例如 preview.2）；留空使用 common.props 中的版本'
         required: false
         type: string
       release_name:
@@ -29,7 +29,7 @@ on:
         type: boolean
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: publish-${{ github.ref }}
@@ -38,18 +38,18 @@ concurrency:
 jobs:
   decide:
     name: Decide publish
-    runs-on: windows-latest
+    runs-on: windows-2025
     outputs:
       proceed: ${{ steps.decision.outputs.proceed }}
       reason: ${{ steps.decision.outputs.reason }}
     steps:
       - name: Checkout (full history)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          submodules: false
+          persist-credentials: false
 
-      - name: Decide by version change or commit message
+      - name: Decide by manual trigger or commit message
         id: decision
         shell: pwsh
         run: |
@@ -72,7 +72,7 @@ jobs:
           }
 
           $proceed = $hasPublishNuget
-          "proceed=$proceed" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "proceed=$($proceed.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           $reason = if ($hasPublishNuget) { "Found 'Publish Nuget' at start of a line in commits" } else { "Commit messages missing line-start 'Publish Nuget' (case-sensitive)" }
           "reason=$reason" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
@@ -83,114 +83,106 @@ jobs:
 
   publish:
     needs: decide
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.decide.outputs.proceed == 'True' || needs.decide.outputs.proceed == 'true' }}
-    runs-on: windows-latest
+    if: ${{ needs.decide.outputs.proceed == 'true' }}
+    runs-on: windows-2025
+    permissions:
+      contents: write
     env:
-      DOTNET_CLI_TELEMETRY_OPTOUT: true
-      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
-      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
+          persist-credentials: false
 
-      - name: Setup .NET 9
-        uses: actions/setup-dotnet@v4
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
-          # Cache disabled to avoid failing when packages.lock.json is missing in CI
+          global-json-file: global.json
+
+      - name: Compute version for release
+        id: compute_version
+        shell: pwsh
+        env:
+          VERSION_SUFFIX: ${{ inputs.version_suffix }}
+        run: |
+          [xml]$xml = Get-Content -Raw -Path 'common.props'
+          $version = $xml.Project.PropertyGroup.Version
+          if ([string]::IsNullOrWhiteSpace($version)) { throw '未能从 common.props 读取 <Version>' }
+          if (-not [string]::IsNullOrWhiteSpace($env:VERSION_SUFFIX)) {
+            if ($env:VERSION_SUFFIX -notmatch '\A(?:0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*))*\z') {
+              throw '版本后缀必须是有效的 SemVer 预发布标识，例如 preview.1'
+            }
+            $baseVersion = ($version -split '[-+]', 2)[0]
+            $version = "$baseVersion-$env:VERSION_SUFFIX"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "prerelease=$($version.Contains('-').ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
 
       - name: Restore
         run: dotnet restore Zyknow.Abp.Lucene.sln
 
       - name: Build (Release)
-        run: dotnet build Zyknow.Abp.Lucene.sln -c Release --no-restore
+        env:
+          RELEASE_VERSION: ${{ steps.compute_version.outputs.version }}
+        run: dotnet build Zyknow.Abp.Lucene.sln -c Release --no-restore -p:ContinuousIntegrationBuild=true "-p:Version=$env:RELEASE_VERSION"
 
       - name: Test (Release)
         if: ${{ inputs.skip_tests != true }}
         run: dotnet test Zyknow.Abp.Lucene.sln -c Release --no-build
 
-      - name: Check NUGET_API_KEY exists
-        shell: pwsh
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:NUGET_API_KEY)) {
-            Write-Error 'GitHub Secret NUGET_API_KEY 未配置或为空。请在仓库 Settings > Secrets and variables > Actions 中配置 NUGET_API_KEY 后重试。'
-          }
-
       - name: Pack src projects only (Release)
         shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.compute_version.outputs.version }}
         run: |
-          $suffixArg = ''
-          if (-not [string]::IsNullOrWhiteSpace('${{ inputs.version_suffix }}')) {
-            $suffixArg = "-p:VersionSuffix=${{ inputs.version_suffix }}"
+          $projects = Get-ChildItem -Path .\src -Recurse -Filter *.csproj
+          if (-not $projects) { throw '未在 src 目录下找到任何 .csproj 项目文件' }
+          foreach ($project in $projects) {
+            dotnet pack $project.FullName -c Release --no-build -o .\artifacts\packages "-p:Version=$env:RELEASE_VERSION"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
-          New-Item -ItemType Directory -Force -Path .\artifacts\packages | Out-Null
-          $projects = Get-ChildItem -Path .\src -Recurse -Filter *.csproj | Select-Object -ExpandProperty FullName
-          if (-not $projects) { Write-Error '未在 src 目录下找到任何 .csproj 项目文件'; exit 1 }
-          foreach ($proj in $projects) {
-            Write-Host "Packing: $proj"
-            dotnet pack "$proj" -c Release --no-build -o .\artifacts\packages -p:ContinuousIntegrationBuild=true $suffixArg
-          }
-
-      - name: List packages
-        shell: pwsh
-        run: Get-ChildItem .\artifacts\packages -File | Select-Object Name,Length | Format-Table -AutoSize
 
       - name: Push to NuGet.org
-        run: >-
-          dotnet nuget push ".\artifacts\packages\*.nupkg"
-          --api-key "$env:NUGET_API_KEY"
-          --source https://api.nuget.org/v3/index.json
-          --skip-duplicate
-
-      - name: Compute version for release
-        id: compute_version
         shell: pwsh
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: |
-          [xml]$xml = Get-Content -Raw -Path "common.props"
-          $version = $xml.Project.PropertyGroup.Version
-          if ([string]::IsNullOrWhiteSpace($version)) { Write-Error '未能从 common.props 读取 <Version>'; exit 1 }
-          if (-not [string]::IsNullOrWhiteSpace('${{ inputs.version_suffix }}')) { $version = "$version-${{ inputs.version_suffix }}" }
-          $isPre = $version.Contains('-')
-          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          "prerelease=$isPre" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          if ([string]::IsNullOrWhiteSpace($env:NUGET_API_KEY)) {
+            throw 'GitHub Secret NUGET_API_KEY 未配置或为空。'
+          }
+          dotnet nuget push '.\artifacts\packages\*.nupkg' --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json --skip-duplicate
 
       - name: Prepare release body
-        id: release_body
         shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.compute_version.outputs.version }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
         run: |
-          $ver = '${{ steps.compute_version.outputs.version }}'
-          $body = @"
-          发布版本: v$ver
-
-          变更说明:
-          ${{ inputs.release_notes }}
-
-          包文件:
-          "@
-          # 附带列出本次产出的包文件名
-          $pkgs = Get-ChildItem .\artifacts\packages -File | Select-Object -ExpandProperty Name
-          if ($pkgs) { $body += ($pkgs -join "`n") }
-          # 如果未提供 release_notes，提供一个占位提示
-          if ([string]::IsNullOrWhiteSpace('${{ inputs.release_notes }}')) { $body += "`n`n(未指定发布说明，后续可在 Release 页面编辑补充)" }
-          $body | Out-File -FilePath release-body.txt -Encoding utf8
-          "path=release-body.txt" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          $notes = if ([string]::IsNullOrWhiteSpace($env:RELEASE_NOTES)) { '(未指定发布说明)' } else { $env:RELEASE_NOTES }
+          $packages = Get-ChildItem .\artifacts\packages -Filter *.nupkg | ForEach-Object { "- $($_.Name)" }
+          @("发布版本: v$env:RELEASE_VERSION", '', '变更说明:', $notes, '', '包文件:') + $packages |
+            Set-Content -Path release-body.txt -Encoding utf8
 
       - name: Upload packages artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nuget-packages
           path: artifacts/packages/*.nupkg
+          if-no-files-found: error
 
       - name: Create GitHub Release and upload artifacts
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.compute_version.outputs.version }}
+          target_commitish: ${{ github.sha }}
           name: ${{ inputs.release_name != '' && inputs.release_name || format('v{0}', steps.compute_version.outputs.version) }}
-          body_path: ${{ steps.release_body.outputs.path }}
-          draft: ${{ inputs.draft }}
-          prerelease: ${{ steps.compute_version.outputs.prerelease == 'True' }}
+          body_path: release-body.txt
+          draft: ${{ inputs.draft || false }}
+          prerelease: ${{ steps.compute_version.outputs.prerelease == 'true' }}
+          fail_on_unmatched_files: true
           files: |
             artifacts/packages/*.nupkg
         env:

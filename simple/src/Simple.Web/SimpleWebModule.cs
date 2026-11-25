@@ -12,7 +12,7 @@ using Simple.MultiTenancy;
 using Simple.Permissions;
 using Simple.Web.Menus;
 using Simple.Web.HealthChecks;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using Volo.Abp;
 using Volo.Abp.AspNetCore.Mvc;
 using Volo.Abp.AspNetCore.Mvc.Localization;
@@ -20,7 +20,6 @@ using Volo.Abp.AspNetCore.Mvc.UI.Theme.Shared;
 using Volo.Abp.AspNetCore.Mvc.UI.Theme.Basic;
 using Volo.Abp.AspNetCore.Mvc.UI.Theme.Basic.Bundling;
 using Volo.Abp.Autofac;
-using Volo.Abp.AutoMapper;
 using Volo.Abp.Modularity;
 using Volo.Abp.PermissionManagement;
 using Volo.Abp.UI.Navigation.Urls;
@@ -133,7 +132,6 @@ public class SimpleWebModule : AbpModule
         ConfigureUrls(configuration);
         ConfigureHealthChecks(context);
         ConfigureAuthentication(context);
-        ConfigureAutoMapper();
         ConfigureVirtualFileSystem(hostingEnvironment);
         ConfigureNavigationServices();
         ConfigureAutoApiControllers();
@@ -211,14 +209,6 @@ public class SimpleWebModule : AbpModule
         context.Services.Configure<AbpClaimsPrincipalFactoryOptions>(options =>
         {
             options.IsDynamicClaimsEnabled = true;
-        });
-    }
-
-    private void ConfigureAutoMapper()
-    {
-        Configure<AbpAutoMapperOptions>(options =>
-        {
-            options.AddMaps<SimpleWebModule>();
         });
     }
 

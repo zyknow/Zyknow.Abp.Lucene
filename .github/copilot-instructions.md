@@ -1,7 +1,7 @@
 # GitHub Copilot Instructions (Zyknow.Abp.Lucene)
 
 ## Project Overview
-- ABP 9.x on .NET 9 with Lucene.NET 4.8.
+- ABP 11 on .NET 11 with Lucene.NET 4.8.
 - Capabilities: index maintenance, full‑text search, filtering, paging, optional highlighting.
 - Modules: Domain.Shared (analyzers/descriptors/options/localization), Domain (index writing and directory), Application (service, event‑driven sync, filter mapping), HttpApi (controllers).
 

@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-2025
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      # The root solution includes the Simple sample as well as the library and tests.
+      - name: Restore
+        run: dotnet restore Zyknow.Abp.Lucene.sln
+
+      - name: Build (Release)
+        run: dotnet build Zyknow.Abp.Lucene.sln -c Release --no-restore -p:ContinuousIntegrationBuild=true
+
+      - name: Test (Release)
+        run: dotnet test Zyknow.Abp.Lucene.sln -c Release --no-build

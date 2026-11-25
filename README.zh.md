@@ -22,10 +22,10 @@
 
 ## 兼容性
 
-- **目标包版本**：`10.0.0-preview.2`
-- **目标框架**：`net10.0`
-- **ABP**：`10.0.0`
-- **Lucene.NET**：`4.8.0-beta00017`
+- **目标包版本**：`11.0.0-preview.1`（Lucene.NET 4.8 仍处于 Beta 阶段）
+- **目标框架**：`net11.0`（构建需要 .NET SDK `11.0.100` 或更新的 .NET 11 SDK）
+- **ABP / EF Core**：`11.0.0`
+- **Lucene.NET**：`4.8.0-beta00018`
 
 ## 安装
 
@@ -40,8 +40,8 @@
 示例（NuGet）：
 
 ```bash
-dotnet add package Zyknow.Abp.Lucene.HttpApi --version 10.0.0-preview.2
-dotnet add package Zyknow.Abp.Lucene.EntityFrameworkCore --version 10.0.0-preview.2
+dotnet add package Zyknow.Abp.Lucene.HttpApi --version 11.0.0-preview.1
+dotnet add package Zyknow.Abp.Lucene.EntityFrameworkCore --version 11.0.0-preview.1
 ```
 
 ## 集成（ABP 模块）

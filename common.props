@@ -1,11 +1,13 @@
 <Project>
     <PropertyGroup>
+        <TargetFramework>net11.0</TargetFramework>
         <LangVersion>latest</LangVersion>
-        <Version>10.0.0-preview.4</Version>
+        <Version>11.0.0-preview.1</Version>
         <NoWarn>$(NoWarn);CS1591</NoWarn>
         <AbpProjectType>app</AbpProjectType>
-        <AbpVersion>10.0.0</AbpVersion>
-        <LuceneVersion>4.8.0-beta00017</LuceneVersion>
+        <AbpVersion>11.0.0</AbpVersion>
+        <DotNetPackageVersion>11.0.0</DotNetPackageVersion>
+        <LuceneVersion>4.8.0-beta00018</LuceneVersion>
     </PropertyGroup>
 
     <Target Name="NoWarnOnRazorViewImportedTypeConflicts" BeforeTargets="RazorCoreCompile">

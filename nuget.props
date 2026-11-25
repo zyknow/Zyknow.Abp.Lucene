@@ -21,8 +21,5 @@
     <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath=""/>
   </ItemGroup>
 
-  <ItemGroup Condition="'$(IsPackable)' != 'false'">
-    <!-- 启用 SourceLink（仅在打包项目中引入） -->
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All"/>
-  </ItemGroup>
+  <!-- SourceLink 由 .NET SDK 提供，无需额外的 GitHub 包引用。 -->
 </Project>
